@@ -1,5 +1,5 @@
 {
-  "name": "lc-lab-desktop",
+  "name": "algolab-desktop",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -13,7 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@lc-lab/core": "file:../../packages/core",
+    "@algolab/core": "file:../../packages/core",
     "@monaco-editor/react": "^4.7.0",
     "@tauri-apps/api": "^2.9.0",
     "dompurify": "^3.3.0",

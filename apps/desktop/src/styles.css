@@ -341,3 +341,131 @@ button {
   border-radius: 6px;
   background: #f0f3f8;
 }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgb(15 23 42 / 0.34);
+  z-index: 10;
+}
+
+.problem-modal {
+  display: grid;
+  grid-template-rows: auto auto minmax(130px, 0.9fr) minmax(160px, 1fr) auto auto;
+  gap: 14px;
+  width: min(1040px, calc(100vw - 56px));
+  max-height: calc(100vh - 56px);
+  padding: 18px;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #cfd7e6;
+  border-radius: 8px;
+  box-shadow: 0 24px 70px rgb(15 23 42 / 0.22);
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+.modal-header p {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 13px;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: #475467;
+  background: #ffffff;
+  border: 1px solid #cfd7e6;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.form-grid label,
+.stacked-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.form-grid span,
+.stacked-field span {
+  color: #344054;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.form-grid input,
+.form-grid select,
+.stacked-field textarea {
+  width: 100%;
+  color: #172033;
+  background: #ffffff;
+  border: 1px solid #cfd7e6;
+  border-radius: 7px;
+  outline: none;
+  font: inherit;
+}
+
+.form-grid input,
+.form-grid select {
+  height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.stacked-field textarea {
+  min-height: 0;
+  height: 100%;
+  padding: 10px;
+  resize: none;
+  font-family: Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.split-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.form-error {
+  padding: 10px 12px;
+  color: #9f1f1f;
+  background: #fff1f1;
+  border: 1px solid #f2b8b5;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

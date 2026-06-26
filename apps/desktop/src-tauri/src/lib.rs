@@ -63,6 +63,20 @@ struct ProblemDetail {
     tests: ProblemTests,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateProblemRequest {
+    id: String,
+    title: String,
+    difficulty: Difficulty,
+    tags: Vec<String>,
+    function_name: String,
+    time_limit_ms: u64,
+    statement: String,
+    starter_code: String,
+    tests_json: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum TestStatus {
@@ -131,6 +145,21 @@ fn problem_path(problem_id: &str) -> Result<PathBuf, String> {
     Ok(problems_dir()?.join(problem_id))
 }
 
+fn validate_problem_id(problem_id: &str) -> Result<(), String> {
+    if problem_id.is_empty() {
+        return Err("Problem id is required.".to_string());
+    }
+
+    let valid = problem_id
+        .chars()
+        .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-');
+    if !valid {
+        return Err("Problem id may only contain lowercase letters, numbers, and hyphens.".to_string());
+    }
+
+    Ok(())
+}
+
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
     let raw = fs::read_to_string(path).map_err(|error| format!("Failed to read {path:?}: {error}"))?;
     serde_json::from_str(&raw).map_err(|error| format!("Failed to parse {path:?}: {error}"))
@@ -159,7 +188,7 @@ fn database_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .app_data_dir()
         .map_err(|error| format!("Could not resolve app data directory: {error}"))?;
     fs::create_dir_all(&dir).map_err(|error| format!("Could not create app data directory: {error}"))?;
-    Ok(dir.join("lc-lab.sqlite3"))
+    Ok(dir.join("algolab.sqlite3"))
 }
 
 fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
@@ -219,6 +248,63 @@ fn list_problems() -> Result<Vec<ProblemSummary>, String> {
 #[tauri::command]
 fn get_problem(problem_id: String) -> Result<ProblemDetail, String> {
     read_problem(&problem_id)
+}
+
+#[tauri::command]
+fn create_problem(request: CreateProblemRequest) -> Result<ProblemDetail, String> {
+    validate_problem_id(&request.id)?;
+
+    if request.title.trim().is_empty() {
+        return Err("Title is required.".to_string());
+    }
+    if request.function_name.trim().is_empty() {
+        return Err("Function name is required.".to_string());
+    }
+    if request.statement.trim().is_empty() {
+        return Err("Problem statement is required.".to_string());
+    }
+
+    let tests: ProblemTests = serde_json::from_str(&request.tests_json)
+        .map_err(|error| format!("Tests JSON is invalid: {error}"))?;
+    if tests.version != 1 {
+        return Err("Tests JSON version must be 1.".to_string());
+    }
+    if tests.function_name != request.function_name {
+        return Err("Tests JSON functionName must match the problem function name.".to_string());
+    }
+
+    let problem_dir = problem_path(&request.id)?;
+    if problem_dir.exists() {
+        return Err(format!("Problem '{}' already exists.", request.id));
+    }
+
+    let meta = ProblemMeta {
+        id: request.id,
+        title: request.title,
+        difficulty: request.difficulty,
+        tags: request.tags,
+        function_name: request.function_name,
+        time_limit_ms: request.time_limit_ms,
+    };
+
+    fs::create_dir_all(problems_dir()?).map_err(|error| format!("Could not create problems directory: {error}"))?;
+    fs::create_dir(&problem_dir).map_err(|error| format!("Could not create problem directory: {error}"))?;
+    fs::write(
+        problem_dir.join("meta.json"),
+        serde_json::to_string_pretty(&meta).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("Could not write meta.json: {error}"))?;
+    fs::write(problem_dir.join("problem.md"), request.statement)
+        .map_err(|error| format!("Could not write problem.md: {error}"))?;
+    fs::write(problem_dir.join("starter.py"), request.starter_code)
+        .map_err(|error| format!("Could not write starter.py: {error}"))?;
+    fs::write(
+        problem_dir.join("tests.json"),
+        serde_json::to_string_pretty(&tests).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("Could not write tests.json: {error}"))?;
+
+    read_problem(&meta.id)
 }
 
 #[tauri::command]
@@ -468,11 +554,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_problems,
             get_problem,
+            create_problem,
             get_draft,
             save_draft,
             run_tests,
             list_submissions
         ])
         .run(tauri::generate_context!())
-        .expect("error while running LC Lab");
+        .expect("error while running AlgoLab");
 }

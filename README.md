@@ -1,6 +1,6 @@
-# LC Lab
+# AlgoLab
 
-LC Lab is a local-only LeetCode-style coding practice desktop app.
+AlgoLab is a local-only LeetCode-style coding practice desktop app.
 
 The first version targets macOS with Tauri v2, React, Vite, TypeScript, Monaco Editor, SQLite, and a Python runner. The code is structured so the app can be ported to Windows and Linux later.
 

@@ -1,11 +1,36 @@
 import Editor from "@monaco-editor/react";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ProblemDetail, ProblemSummary, RunSummary, Submission } from "@lc-lab/core";
-import { getDraft, getProblem, listProblems, listSubmissions, runProblemTests, saveDraft } from "./tauri";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import type { Difficulty, ProblemDetail, ProblemSummary, RunSummary, Submission } from "@algolab/core";
+import { createProblem, getDraft, getProblem, listProblems, listSubmissions, runProblemTests, saveDraft, type CreateProblemInput } from "./tauri";
 
 type LoadState = "idle" | "loading" | "error";
+
+const defaultTestsJson = `{
+  "version": 1,
+  "functionName": "solve",
+  "cases": [
+    {
+      "name": "example 1",
+      "input": [],
+      "expected": null
+    }
+  ]
+}`;
+
+const initialProblemForm: CreateProblemInput & { tagsText: string } = {
+  id: "",
+  title: "",
+  difficulty: "easy",
+  tags: [],
+  tagsText: "",
+  functionName: "solve",
+  timeLimitMs: 2000,
+  statement: "# New Problem\n\nPaste the problem statement here.",
+  starterCode: "class Solution:\n    def solve(self):\n        return None\n",
+  testsJson: defaultTestsJson
+};
 
 function difficultyClass(difficulty: ProblemSummary["difficulty"]) {
   return `difficulty difficulty-${difficulty}`;
@@ -21,6 +46,17 @@ function App() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [status, setStatus] = useState("Ready");
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [problemForm, setProblemForm] = useState(initialProblemForm);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const refreshProblems = useCallback(async (nextSelectedId?: string) => {
+    const items = await listProblems();
+    setProblems(items);
+    setSelectedId(nextSelectedId ?? selectedId ?? items[0]?.id ?? null);
+    return items;
+  }, [selectedId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,17 +129,56 @@ function App() {
     setStatus(`${summary.passed} passed, ${summary.failed} failed in ${summary.durationMs} ms`);
   }, [code, problem, saveCurrentDraft]);
 
+  const updateProblemForm = <Key extends keyof typeof problemForm>(key: Key, value: (typeof problemForm)[Key]) => {
+    setProblemForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const submitNewProblem = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError(null);
+    setIsCreating(true);
+
+    try {
+      const input: CreateProblemInput = {
+        id: problemForm.id.trim(),
+        title: problemForm.title.trim(),
+        difficulty: problemForm.difficulty,
+        tags: problemForm.tagsText
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        functionName: problemForm.functionName.trim(),
+        timeLimitMs: Number(problemForm.timeLimitMs),
+        statement: problemForm.statement,
+        starterCode: problemForm.starterCode,
+        testsJson: problemForm.testsJson
+      };
+      const created = await createProblem(input);
+      await refreshProblems(created.meta.id);
+      setProblemForm(initialProblemForm);
+      setIsAddOpen(false);
+      setStatus(`Created ${created.meta.title}`);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   const selectedProblem = problems.find((item) => item.id === selectedId);
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <h1>LC Lab</h1>
-          <p>Local coding practice for Python problems.</p>
+          <h1>AlgoLab</h1>
+          <p>Local algorithm practice for Python problems.</p>
         </div>
         <div className="toolbar">
           <span className="status-text">{status}</span>
+          <button className="secondary-button" onClick={() => setIsAddOpen(true)}>
+            Add Problem
+          </button>
           <button className="secondary-button" disabled={!problem} onClick={saveCurrentDraft}>
             Save
           </button>
@@ -196,6 +271,109 @@ function App() {
           ))}
         </div>
       </section>
+
+      {isAddOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <form className="problem-modal" onSubmit={submitNewProblem}>
+            <div className="modal-header">
+              <div>
+                <h2>Add Problem</h2>
+                <p>Create a local problem from pasted content.</p>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close" onClick={() => setIsAddOpen(false)}>
+                x
+              </button>
+            </div>
+
+            <div className="form-grid">
+              <label>
+                <span>Problem ID</span>
+                <input
+                  value={problemForm.id}
+                  placeholder="valid-anagram"
+                  onChange={(event) => updateProblemForm("id", event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                <span>Title</span>
+                <input
+                  value={problemForm.title}
+                  placeholder="Valid Anagram"
+                  onChange={(event) => updateProblemForm("title", event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                <span>Difficulty</span>
+                <select
+                  value={problemForm.difficulty}
+                  onChange={(event) => updateProblemForm("difficulty", event.target.value as Difficulty)}
+                >
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+              <label>
+                <span>Function Name</span>
+                <input
+                  value={problemForm.functionName}
+                  placeholder="isAnagram"
+                  onChange={(event) => updateProblemForm("functionName", event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                <span>Tags</span>
+                <input
+                  value={problemForm.tagsText}
+                  placeholder="array, hash-map"
+                  onChange={(event) => updateProblemForm("tagsText", event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Timeout</span>
+                <input
+                  min={100}
+                  step={100}
+                  type="number"
+                  value={problemForm.timeLimitMs}
+                  onChange={(event) => updateProblemForm("timeLimitMs", Number(event.target.value))}
+                  required
+                />
+              </label>
+            </div>
+
+            <label className="stacked-field">
+              <span>Statement Markdown</span>
+              <textarea value={problemForm.statement} onChange={(event) => updateProblemForm("statement", event.target.value)} />
+            </label>
+
+            <div className="split-fields">
+              <label className="stacked-field">
+                <span>Starter Code</span>
+                <textarea value={problemForm.starterCode} onChange={(event) => updateProblemForm("starterCode", event.target.value)} />
+              </label>
+              <label className="stacked-field">
+                <span>Tests JSON</span>
+                <textarea value={problemForm.testsJson} onChange={(event) => updateProblemForm("testsJson", event.target.value)} />
+              </label>
+            </div>
+
+            {formError ? <div className="form-error">{formError}</div> : null}
+
+            <div className="modal-actions">
+              <button className="secondary-button" type="button" onClick={() => setIsAddOpen(false)}>
+                Cancel
+              </button>
+              <button className="primary-button" type="submit" disabled={isCreating}>
+                {isCreating ? "Creating..." : "Create"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }

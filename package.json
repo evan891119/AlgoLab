@@ -1,8 +1,8 @@
 {
-  "name": "lc-lab-workspace",
+  "name": "algolab-workspace",
   "private": true,
   "version": "0.1.0",
-  "description": "LC Lab local coding practice workspace.",
+  "description": "AlgoLab local coding practice workspace.",
   "workspaces": [
     "apps/desktop",
     "packages/core"

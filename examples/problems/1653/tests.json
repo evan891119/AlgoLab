@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "functionName": "solve",
+  "cases": [
+    {
+      "name": "example 1",
+      "input": [],
+      "expected": null
+    }
+  ]
+}

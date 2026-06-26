@@ -1,0 +1,8 @@
+{
+  "id": "1653",
+  "title": "Minimum Deletions to Make String Balanced",
+  "difficulty": "medium",
+  "tags": [],
+  "functionName": "solve",
+  "timeLimitMs": 2000
+}

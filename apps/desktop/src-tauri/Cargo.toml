@@ -1,12 +1,12 @@
 [package]
-name = "lc-lab"
+name = "algolab"
 version = "0.1.0"
-description = "A local coding practice desktop app."
-authors = ["LC Lab"]
+description = "A local algorithm practice desktop app."
+authors = ["AlgoLab"]
 edition = "2021"
 
 [lib]
-name = "lc_lab_lib"
+name = "algolab_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

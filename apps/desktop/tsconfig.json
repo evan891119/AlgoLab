@@ -5,7 +5,7 @@
     "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "paths": {
-      "@lc-lab/core": [
+      "@algolab/core": [
         "../../packages/core/src"
       ]
     },
