@@ -7,29 +7,30 @@ import { createProblem, getDraft, getProblem, listProblems, listSubmissions, run
 
 type LoadState = "idle" | "loading" | "error";
 
-const defaultTestsJson = `{
-  "version": 1,
-  "functionName": "solve",
-  "cases": [
-    {
-      "name": "example 1",
-      "input": [],
-      "expected": null
-    }
-  ]
-}`;
+interface TestCaseForm {
+  id: string;
+  name: string;
+  inputText: string;
+  expectedText: string;
+}
 
-const initialProblemForm: CreateProblemInput & { tagsText: string } = {
+const createEmptyTestCase = (index: number): TestCaseForm => ({
+  id: crypto.randomUUID(),
+  name: `example ${index}`,
+  inputText: "[]",
+  expectedText: "null"
+});
+
+const initialProblemForm: Omit<CreateProblemInput, "tags" | "testsJson"> & { tagsText: string; testCases: TestCaseForm[] } = {
   id: "",
   title: "",
   difficulty: "easy",
-  tags: [],
   tagsText: "",
   functionName: "solve",
   timeLimitMs: 2000,
   statement: "# New Problem\n\nPaste the problem statement here.",
   starterCode: "class Solution:\n    def solve(self):\n        return None\n",
-  testsJson: defaultTestsJson
+  testCases: [createEmptyTestCase(1)]
 };
 
 function difficultyClass(difficulty: ProblemSummary["difficulty"]) {
@@ -46,7 +47,7 @@ function App() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [status, setStatus] = useState("Ready");
-  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(() => new URLSearchParams(window.location.search).has("addProblem"));
   const [problemForm, setProblemForm] = useState(initialProblemForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -133,6 +134,51 @@ function App() {
     setProblemForm((current) => ({ ...current, [key]: value }));
   };
 
+  const updateTestCase = (caseId: string, patch: Partial<TestCaseForm>) => {
+    setProblemForm((current) => ({
+      ...current,
+      testCases: current.testCases.map((testCase) => (testCase.id === caseId ? { ...testCase, ...patch } : testCase))
+    }));
+  };
+
+  const addTestCase = () => {
+    setProblemForm((current) => ({
+      ...current,
+      testCases: [...current.testCases, createEmptyTestCase(current.testCases.length + 1)]
+    }));
+  };
+
+  const removeTestCase = (caseId: string) => {
+    setProblemForm((current) => ({
+      ...current,
+      testCases: current.testCases.length === 1
+        ? current.testCases
+        : current.testCases.filter((testCase) => testCase.id !== caseId)
+    }));
+  };
+
+  const buildTestsJson = () => {
+    const cases = problemForm.testCases.map((testCase) => ({
+      name: testCase.name.trim() || "test case",
+      input: JSON.parse(testCase.inputText),
+      expected: JSON.parse(testCase.expectedText)
+    }));
+
+    if (cases.some((testCase) => !Array.isArray(testCase.input))) {
+      throw new Error("Each Arguments value must be a JSON array, for example [[2,7,11,15],9].");
+    }
+
+    return JSON.stringify(
+      {
+        version: 1,
+        functionName: problemForm.functionName.trim(),
+        cases
+      },
+      null,
+      2
+    );
+  };
+
   const submitNewProblem = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError(null);
@@ -151,11 +197,11 @@ function App() {
         timeLimitMs: Number(problemForm.timeLimitMs),
         statement: problemForm.statement,
         starterCode: problemForm.starterCode,
-        testsJson: problemForm.testsJson
+        testsJson: buildTestsJson()
       };
       const created = await createProblem(input);
       await refreshProblems(created.meta.id);
-      setProblemForm(initialProblemForm);
+      setProblemForm({ ...initialProblemForm, testCases: [createEmptyTestCase(1)] });
       setIsAddOpen(false);
       setStatus(`Created ${created.meta.title}`);
     } catch (error) {
@@ -355,10 +401,53 @@ function App() {
                 <span>Starter Code</span>
                 <textarea value={problemForm.starterCode} onChange={(event) => updateProblemForm("starterCode", event.target.value)} />
               </label>
-              <label className="stacked-field">
-                <span>Tests JSON</span>
-                <textarea value={problemForm.testsJson} onChange={(event) => updateProblemForm("testsJson", event.target.value)} />
-              </label>
+              <div className="testcase-panel">
+                <div className="testcase-panel-header">
+                  <span>Test Cases</span>
+                  <button className="secondary-button compact-button" type="button" onClick={addTestCase}>
+                    Add Case
+                  </button>
+                </div>
+                <div className="testcase-list">
+                  {problemForm.testCases.map((testCase, index) => (
+                    <div className="testcase-row" key={testCase.id}>
+                      <label>
+                        <span>Name</span>
+                        <input
+                          value={testCase.name}
+                          onChange={(event) => updateTestCase(testCase.id, { name: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>Arguments JSON</span>
+                        <input
+                          value={testCase.inputText}
+                          placeholder="[[2,7,11,15],9]"
+                          onChange={(event) => updateTestCase(testCase.id, { inputText: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>Expected JSON</span>
+                        <input
+                          value={testCase.expectedText}
+                          placeholder="[0,1]"
+                          onChange={(event) => updateTestCase(testCase.id, { expectedText: event.target.value })}
+                        />
+                      </label>
+                      <button
+                        className="icon-button"
+                        type="button"
+                        aria-label={`Remove test case ${index + 1}`}
+                        disabled={problemForm.testCases.length === 1}
+                        onClick={() => removeTestCase(testCase.id)}
+                      >
+                        -
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p className="field-hint">Arguments must be a JSON array of function arguments. For Two Sum, use [[2,7,11,15],9].</p>
+              </div>
             </div>
 
             {formError ? <div className="form-error">{formError}</div> : null}
