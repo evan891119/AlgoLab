@@ -51,6 +51,7 @@ function App() {
   const [problemForm, setProblemForm] = useState(initialProblemForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isStatementExpanded, setIsStatementExpanded] = useState(false);
 
   const refreshProblems = useCallback(async (nextSelectedId?: string) => {
     const items = await listProblems();
@@ -392,7 +393,12 @@ function App() {
             </div>
 
             <label className="stacked-field">
-              <span>Statement Markdown</span>
+              <span className="field-title-row">
+                <span>Statement Markdown</span>
+                <button className="secondary-button compact-button" type="button" onClick={() => setIsStatementExpanded(true)}>
+                  Expand
+                </button>
+              </span>
               <textarea value={problemForm.statement} onChange={(event) => updateProblemForm("statement", event.target.value)} />
             </label>
 
@@ -461,6 +467,31 @@ function App() {
               </button>
             </div>
           </form>
+
+          {isStatementExpanded ? (
+            <div className="expanded-editor-panel">
+              <div className="expanded-editor-header">
+                <div>
+                  <h3>Statement Markdown</h3>
+                  <p>Edit pasted problem text and restore inline code formatting.</p>
+                </div>
+                <button className="icon-button" type="button" aria-label="Close expanded statement editor" onClick={() => setIsStatementExpanded(false)}>
+                  x
+                </button>
+              </div>
+              <textarea
+                className="expanded-editor-textarea"
+                value={problemForm.statement}
+                onChange={(event) => updateProblemForm("statement", event.target.value)}
+              />
+              <div className="expanded-editor-footer">
+                <span>Inline code example: `1 &lt;= nums.length &lt;= 10^5`</span>
+                <button className="primary-button" type="button" onClick={() => setIsStatementExpanded(false)}>
+                  Done
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
