@@ -1,0 +1,19 @@
+{
+  "name": "lc-lab-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "description": "LC Lab local coding practice workspace.",
+  "workspaces": [
+    "apps/desktop",
+    "packages/core"
+  ],
+  "scripts": {
+    "dev": "npm --workspace apps/desktop run dev",
+    "tauri": "npm --workspace apps/desktop run tauri",
+    "build": "npm --workspace packages/core run build && npm --workspace apps/desktop run build",
+    "typecheck": "npm --workspace packages/core run typecheck && npm --workspace apps/desktop run typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "id": "two-sum",
+  "title": "Two Sum",
+  "difficulty": "easy",
+  "tags": ["array", "hash-map"],
+  "functionName": "twoSum",
+  "timeLimitMs": 2000
+}
