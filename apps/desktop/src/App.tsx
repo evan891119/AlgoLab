@@ -11,11 +11,12 @@ import {
   useRef,
   useState
 } from "react";
-import type { Difficulty, ProblemDetail, ProblemNotes, ProblemSource, ProblemStatus, ProblemSummary, RunSummary, Submission } from "@algolab/core";
+import type { Difficulty, ProblemAttemptSummary, ProblemDetail, ProblemNotes, ProblemSource, ProblemStatus, ProblemSummary, RunSummary, Submission } from "@algolab/core";
 import {
   createProblem,
   getDraft,
   getProblem,
+  getProblemAttemptSummary,
   getProblemNotes,
   listProblems,
   listSubmissions,
@@ -76,6 +77,16 @@ const createEmptyProblemNotes = (problemId: string): ProblemNotes => ({
   updatedAt: null
 });
 
+const createEmptyAttemptSummary = (problemId: string): ProblemAttemptSummary => ({
+  problemId,
+  firstAttemptedAt: null,
+  lastPracticedAt: null,
+  attemptCount: 0,
+  bestPassed: 0,
+  bestTotal: 0,
+  solved: false
+});
+
 const problemToForm = (detail: ProblemDetail): ProblemForm => ({
   id: detail.meta.id,
   title: detail.meta.title,
@@ -125,12 +136,29 @@ function statusLabel(status: ProblemStatus) {
   return labels[status];
 }
 
+function effectiveStatus(problem: ProblemSummary): ProblemStatus {
+  const summary = problem.attemptSummary ?? createEmptyAttemptSummary(problem.id);
+  if (summary.solved) return "solved";
+  if (summary.attemptCount > 0) return "attempted";
+  return problem.status;
+}
+
+function attemptSummaryText(summary: ProblemAttemptSummary) {
+  if (summary.attemptCount === 0) return "No attempts";
+  return `${summary.attemptCount} attempt${summary.attemptCount === 1 ? "" : "s"} · best ${summary.bestPassed}/${summary.bestTotal}`;
+}
+
+function formatShortDateTime(value: string | null) {
+  return value ? new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-";
+}
+
 function App() {
   const workspaceRef = useRef<HTMLElement | null>(null);
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
   const [problemNotes, setProblemNotes] = useState<ProblemNotes | null>(null);
+  const [attemptSummary, setAttemptSummary] = useState<ProblemAttemptSummary | null>(null);
   const [problemPanelTab, setProblemPanelTab] = useState<ProblemPanelTab>("statement");
   const [code, setCode] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -186,11 +214,19 @@ function App() {
     setLoadState("loading");
     setRunSummary(null);
     setProblemNotes(null);
-    Promise.all([getProblem(selectedId), getDraft(selectedId), getProblemNotes(selectedId), listSubmissions(selectedId)])
-      .then(([detail, draft, notes, submissionItems]) => {
+    setAttemptSummary(null);
+    Promise.all([
+      getProblem(selectedId),
+      getDraft(selectedId),
+      getProblemNotes(selectedId),
+      getProblemAttemptSummary(selectedId),
+      listSubmissions(selectedId)
+    ])
+      .then(([detail, draft, notes, nextAttemptSummary, submissionItems]) => {
         if (cancelled) return;
         setProblem(detail);
         setProblemNotes(notes);
+        setAttemptSummary(nextAttemptSummary);
         setCode(draft?.code ?? detail.starterCode);
         setSavedAt(draft?.updatedAt ?? null);
         setSubmissions(submissionItems);
@@ -245,8 +281,10 @@ function App() {
     const summary = await runProblemTests(problem.meta.id, code);
     setRunSummary(summary);
     setSubmissions(await listSubmissions(problem.meta.id));
+    setAttemptSummary(await getProblemAttemptSummary(problem.meta.id));
+    await refreshProblems(problem.meta.id);
     setStatus(`${summary.passed} passed, ${summary.failed} failed in ${summary.durationMs} ms`);
-  }, [code, problem, saveCurrentDraft]);
+  }, [code, problem, refreshProblems, saveCurrentDraft]);
 
   const updateProblemNotes = <Key extends keyof Omit<ProblemNotes, "problemId" | "updatedAt">>(
     key: Key,
@@ -390,6 +428,7 @@ function App() {
 
   const selectedProblem = problems.find((item) => item.id === selectedId);
   const selectedResult = runSummary?.results[selectedResultIndex] ?? null;
+  const currentAttemptSummary = attemptSummary ?? createEmptyAttemptSummary(problem?.meta.id ?? "");
   const layoutStyle = {
     "--problem-list-width": `${layout.problemListWidth}px`,
     "--statement-width": `${layout.statementWidth}px`,
@@ -499,21 +538,25 @@ function App() {
             <strong>{problems.length}</strong>
           </div>
           <div className="list-scroll">
-            {problems.map((item) => (
-              <button
-                key={item.id}
-                className={item.id === selectedId ? "problem-row selected" : "problem-row"}
-                onClick={() => setSelectedId(item.id)}
-              >
-                <span className="problem-title">{item.title}</span>
-                <span className={difficultyClass(item.difficulty)}>{item.difficulty}</span>
-                <span className="problem-meta-line">
-                  <span>{sourceLabel(item.source)}</span>
-                  <span className={`status-pill status-${item.status}`}>{statusLabel(item.status)}</span>
-                  {item.topic ? <span>{item.topic}</span> : null}
-                </span>
-              </button>
-            ))}
+            {problems.map((item) => {
+              const status = effectiveStatus(item);
+              return (
+                <button
+                  key={item.id}
+                  className={item.id === selectedId ? "problem-row selected" : "problem-row"}
+                  onClick={() => setSelectedId(item.id)}
+                >
+                  <span className="problem-title">{item.title}</span>
+                  <span className={difficultyClass(item.difficulty)}>{item.difficulty}</span>
+                  <span className="problem-meta-line">
+                    <span>{sourceLabel(item.source)}</span>
+                    <span className={`status-pill status-${status}`}>{statusLabel(status)}</span>
+                    {item.topic ? <span>{item.topic}</span> : null}
+                  </span>
+                  <span className="problem-attempt-line">{attemptSummaryText(item.attemptSummary ?? createEmptyAttemptSummary(item.id))}</span>
+                </button>
+              );
+            })}
           </div>
         </aside>
 
@@ -619,6 +662,12 @@ function App() {
           <div className="panel-header">
             <span>Solution.py</span>
             <strong>{savedAt ? `Saved ${new Date(savedAt).toLocaleTimeString()}` : "Unsaved draft"}</strong>
+          </div>
+          <div className="attempt-summary-bar">
+            <span>Attempts: {currentAttemptSummary.attemptCount}</span>
+            <span>Best: {currentAttemptSummary.bestPassed}/{currentAttemptSummary.bestTotal}</span>
+            <span>First: {formatShortDateTime(currentAttemptSummary.firstAttemptedAt)}</span>
+            <span>Last: {formatShortDateTime(currentAttemptSummary.lastPracticedAt)}</span>
           </div>
           <div className="editor-wrap">
             <Editor

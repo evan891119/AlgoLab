@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   summarizeResults,
   type Difficulty,
+  type ProblemAttemptSummary,
   type ProblemDetail,
   type ProblemNotes,
   type ProblemSource,
@@ -55,6 +56,42 @@ const emptyProblemNotes = (problemId: string): ProblemNotes => ({
   updatedAt: null
 });
 
+const emptyAttemptSummary = (problemId: string): ProblemAttemptSummary => ({
+  problemId,
+  firstAttemptedAt: null,
+  lastPracticedAt: null,
+  attemptCount: 0,
+  bestPassed: 0,
+  bestTotal: 0,
+  solved: false
+});
+
+const getMockAttemptSummary = (problemId: string): ProblemAttemptSummary => {
+  const submissions = mockSubmissions
+    .filter((submission) => submission.problemId === problemId)
+    .slice()
+    .sort((left, right) => left.id - right.id);
+  const summary = emptyAttemptSummary(problemId);
+
+  for (const submission of submissions) {
+    const total = submission.result.results.length;
+    const isBetter = submission.result.passed > summary.bestPassed ||
+      (submission.result.passed === summary.bestPassed && total > summary.bestTotal);
+    summary.firstAttemptedAt ??= submission.createdAt;
+    summary.lastPracticedAt = submission.createdAt;
+    summary.attemptCount += 1;
+    if (isBetter) {
+      summary.bestPassed = submission.result.passed;
+      summary.bestTotal = total;
+    }
+    if (total > 0 && submission.result.passed === total) {
+      summary.solved = true;
+    }
+  }
+
+  return summary;
+};
+
 const sampleProblem: ProblemDetail = {
   meta: {
     ...(sampleMeta as Omit<ProblemDetail["meta"], "source" | "status">),
@@ -103,7 +140,8 @@ export function listProblems(): Promise<ProblemSummary[]> {
         tags: problem.meta.tags,
         source: problem.meta.source,
         topic: problem.meta.topic,
-        status: problem.meta.status
+        status: problem.meta.status,
+        attemptSummary: getMockAttemptSummary(problem.meta.id)
       }))
     );
   }
@@ -192,6 +230,14 @@ export function saveProblemNotes(problemId: string, notes: SaveProblemNotesInput
   }
 
   return invoke("save_problem_notes", { problemId, notes });
+}
+
+export function getProblemAttemptSummary(problemId: string): Promise<ProblemAttemptSummary> {
+  if (!hasTauriRuntime()) {
+    return Promise.resolve(getMockAttemptSummary(problemId));
+  }
+
+  return invoke("get_problem_attempt_summary", { problemId });
 }
 
 export function runProblemTests(problemId: string, code: string): Promise<RunSummary> {

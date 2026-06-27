@@ -67,6 +67,7 @@ struct ProblemTests {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ProblemSummary {
     id: String,
     title: String,
@@ -75,6 +76,7 @@ struct ProblemSummary {
     source: String,
     topic: Option<String>,
     status: String,
+    attempt_summary: ProblemAttemptSummary,
 }
 
 #[derive(Debug, Serialize)]
@@ -135,6 +137,18 @@ struct RunSummary {
     failed: usize,
     duration_ms: u128,
     results: Vec<TestResult>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ProblemAttemptSummary {
+    problem_id: String,
+    first_attempted_at: Option<String>,
+    last_practiced_at: Option<String>,
+    attempt_count: usize,
+    best_passed: usize,
+    best_total: usize,
+    solved: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -294,11 +308,71 @@ fn empty_problem_notes(problem_id: String) -> ProblemNotes {
     }
 }
 
+fn empty_attempt_summary(problem_id: String) -> ProblemAttemptSummary {
+    ProblemAttemptSummary {
+        problem_id,
+        first_attempted_at: None,
+        last_practiced_at: None,
+        attempt_count: 0,
+        best_passed: 0,
+        best_total: 0,
+        solved: false,
+    }
+}
+
+fn attempt_summary_for_problem(
+    connection: &Connection,
+    problem_id: &str,
+) -> Result<ProblemAttemptSummary, String> {
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT result_json, created_at
+            FROM submissions
+            WHERE problem_id = ?1
+            ORDER BY id ASC
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+
+    let rows = statement
+        .query_map(params![problem_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| error.to_string())?;
+
+    let mut summary = empty_attempt_summary(problem_id.to_string());
+    for row in rows {
+        let (result_json, created_at) = row.map_err(|error| error.to_string())?;
+        let run_summary: RunSummary =
+            serde_json::from_str(&result_json).map_err(|error| error.to_string())?;
+        let total = run_summary.results.len();
+        let is_better = run_summary.passed > summary.best_passed
+            || (run_summary.passed == summary.best_passed && total > summary.best_total);
+
+        if summary.first_attempted_at.is_none() {
+            summary.first_attempted_at = Some(created_at.clone());
+        }
+        summary.last_practiced_at = Some(created_at);
+        summary.attempt_count += 1;
+        if is_better {
+            summary.best_passed = run_summary.passed;
+            summary.best_total = total;
+        }
+        if total > 0 && run_summary.passed == total {
+            summary.solved = true;
+        }
+    }
+
+    Ok(summary)
+}
+
 #[tauri::command]
-fn list_problems() -> Result<Vec<ProblemSummary>, String> {
+fn list_problems(app: tauri::AppHandle) -> Result<Vec<ProblemSummary>, String> {
     let mut problems = Vec::new();
     let entries = fs::read_dir(problems_dir()?)
         .map_err(|error| format!("Could not read problems directory: {error}"))?;
+    let connection = open_database(&app)?;
 
     for entry in entries {
         let entry =
@@ -318,6 +392,7 @@ fn list_problems() -> Result<Vec<ProblemSummary>, String> {
 
         let meta: ProblemMeta = read_json(&meta_path)?;
         problems.push(ProblemSummary {
+            attempt_summary: attempt_summary_for_problem(&connection, &meta.id)?,
             id: meta.id,
             title: meta.title,
             difficulty: meta.difficulty,
@@ -588,6 +663,16 @@ fn save_problem_notes(
 }
 
 #[tauri::command]
+fn get_problem_attempt_summary(
+    app: tauri::AppHandle,
+    problem_id: String,
+) -> Result<ProblemAttemptSummary, String> {
+    validate_problem_id(&problem_id)?;
+    let connection = open_database(&app)?;
+    attempt_summary_for_problem(&connection, &problem_id)
+}
+
+#[tauri::command]
 fn list_submissions(app: tauri::AppHandle, problem_id: String) -> Result<Vec<Submission>, String> {
     let connection = open_database(&app)?;
     let mut statement = connection
@@ -829,6 +914,7 @@ pub fn run() {
             save_draft,
             get_problem_notes,
             save_problem_notes,
+            get_problem_attempt_summary,
             run_tests,
             list_submissions
         ])

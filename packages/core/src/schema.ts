@@ -37,6 +37,7 @@ export interface ProblemSummary {
   source: ProblemSource;
   topic?: string;
   status: ProblemStatus;
+  attemptSummary: ProblemAttemptSummary;
 }
 
 export interface ProblemDetail {
@@ -54,6 +55,16 @@ export interface ProblemNotes {
   complexity: string;
   reviewNotes: string;
   updatedAt: string | null;
+}
+
+export interface ProblemAttemptSummary {
+  problemId: string;
+  firstAttemptedAt: string | null;
+  lastPracticedAt: string | null;
+  attemptCount: number;
+  bestPassed: number;
+  bestTotal: number;
+  solved: boolean;
 }
 
 export function validateProblemMeta(value: unknown): ProblemMeta {

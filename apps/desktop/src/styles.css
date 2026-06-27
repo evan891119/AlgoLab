@@ -264,7 +264,7 @@ button {
   grid-template-columns: 1fr auto;
   align-items: center;
   width: 100%;
-  min-height: 52px;
+  min-height: 74px;
   padding: 10px;
   margin-bottom: 4px;
   color: var(--text);
@@ -304,6 +304,17 @@ button {
 
 .problem-meta-line span {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.problem-attempt-line {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -460,6 +471,29 @@ button {
 
 .editor-wrap {
   background: #1e1e1e;
+}
+
+.editor-pane .editor-wrap {
+  height: calc(100% - 82px);
+}
+
+.attempt-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.attempt-summary-bar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .results-pane {
