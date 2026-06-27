@@ -28,6 +28,10 @@ fn default_problem_status() -> String {
     "new".to_string()
 }
 
+fn default_problem_language() -> String {
+    "python".to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct ProblemMeta {
@@ -47,6 +51,8 @@ struct ProblemMeta {
     pattern: Option<String>,
     #[serde(default = "default_problem_status")]
     status: String,
+    #[serde(default = "default_problem_language")]
+    language: String,
     function_name: String,
     time_limit_ms: u64,
 }
@@ -101,6 +107,7 @@ struct ProblemWriteRequest {
     topic: Option<String>,
     pattern: Option<String>,
     status: String,
+    language: String,
     function_name: String,
     time_limit_ms: u64,
     statement: String,
@@ -211,6 +218,14 @@ fn problem_path(problem_id: &str) -> Result<PathBuf, String> {
     Ok(problems_dir()?.join(problem_id))
 }
 
+fn starter_filename(language: &str) -> Result<&'static str, String> {
+    match language {
+        "python" => Ok("starter.py"),
+        "javascript" => Ok("starter.js"),
+        _ => Err("Problem language is invalid.".to_string()),
+    }
+}
+
 fn validate_problem_id(problem_id: &str) -> Result<(), String> {
     if problem_id.is_empty() {
         return Err("Problem id is required.".to_string());
@@ -240,7 +255,7 @@ fn read_problem(problem_id: &str) -> Result<ProblemDetail, String> {
     let tests: ProblemTests = read_json(&path.join("tests.json"))?;
     let statement = fs::read_to_string(path.join("problem.md"))
         .map_err(|error| format!("Failed to read problem statement: {error}"))?;
-    let starter_code = fs::read_to_string(path.join("starter.py"))
+    let starter_code = fs::read_to_string(path.join(starter_filename(&meta.language)?))
         .map_err(|error| format!("Failed to read starter code: {error}"))?;
 
     Ok(ProblemDetail {
@@ -438,6 +453,9 @@ fn validate_problem_write_request(
     ) {
         return Err("Problem status is invalid.".to_string());
     }
+    if !matches!(request.language.as_str(), "python" | "javascript") {
+        return Err("Problem language is invalid.".to_string());
+    }
 
     let tests: ProblemTests = serde_json::from_str(&request.tests_json)
         .map_err(|error| format!("Tests JSON is invalid: {error}"))?;
@@ -471,6 +489,7 @@ fn validate_problem_write_request(
             .clone()
             .filter(|value| !value.trim().is_empty()),
         status: request.status.clone(),
+        language: request.language.clone(),
         function_name: request.function_name.clone(),
         time_limit_ms: request.time_limit_ms,
     };
@@ -493,8 +512,9 @@ fn write_problem_files(
     .map_err(|error| format!("Could not write meta.json: {error}"))?;
     fs::write(problem_dir.join("problem.md"), request.statement)
         .map_err(|error| format!("Could not write problem.md: {error}"))?;
-    fs::write(problem_dir.join("starter.py"), request.starter_code)
-        .map_err(|error| format!("Could not write starter.py: {error}"))?;
+    let starter_file = starter_filename(&meta.language)?;
+    fs::write(problem_dir.join(starter_file), request.starter_code)
+        .map_err(|error| format!("Could not write {starter_file}: {error}"))?;
     fs::write(
         problem_dir.join("tests.json"),
         serde_json::to_string_pretty(&tests).map_err(|error| error.to_string())?,
@@ -711,7 +731,7 @@ fn list_submissions(app: tauri::AppHandle, problem_id: String) -> Result<Vec<Sub
         .map_err(|error| error.to_string())
 }
 
-fn build_runner(tests: &ProblemTests) -> Result<String, String> {
+fn build_python_runner(tests: &ProblemTests) -> Result<String, String> {
     let tests_json = serde_json::to_string(tests).map_err(|error| error.to_string())?;
     Ok(format!(
         r#"
@@ -785,7 +805,7 @@ fn execute_python(
 
     fs::write(&solution_path, code)
         .map_err(|error| format!("Could not write solution: {error}"))?;
-    fs::write(&runner_path, build_runner(tests)?)
+    fs::write(&runner_path, build_python_runner(tests)?)
         .map_err(|error| format!("Could not write runner: {error}"))?;
 
     let mut child = Command::new("python3")
@@ -848,6 +868,199 @@ fn execute_python(
     }
 }
 
+fn build_javascript_runner(tests: &ProblemTests) -> Result<String, String> {
+    let tests_json = serde_json::to_string(tests).map_err(|error| error.to_string())?;
+    Ok(format!(
+        r#"
+const path = require("path");
+
+const TESTS = JSON.parse({tests_json:?});
+const originalLog = console.log;
+let setupOutput = "";
+console.log = (...args) => {{
+  setupOutput += args.map((value) => typeof value === "string" ? value : JSON.stringify(value)).join(" ") + "\n";
+}};
+
+let SolutionClass;
+try {{
+  SolutionClass = require(path.resolve("solution.js"));
+  if (SolutionClass && typeof SolutionClass !== "function" && typeof SolutionClass.default === "function") {{
+    SolutionClass = SolutionClass.default;
+  }}
+  if (typeof SolutionClass !== "function" && typeof Solution === "function") {{
+    SolutionClass = Solution;
+  }}
+}} catch (error) {{
+  originalLog(JSON.stringify(TESTS.cases.map((testCase) => ({{
+    name: testCase.name,
+    status: "error",
+    input: testCase.input,
+    expected: testCase.expected,
+    actual: null,
+    error: error.stack || String(error),
+    stdout: setupOutput || null,
+    durationMs: 0
+  }}))));
+  process.exit(0);
+}}
+
+console.log = originalLog;
+
+function deepEqual(left, right) {{
+  return JSON.stringify(left) === JSON.stringify(right);
+}}
+
+function runCase(solution, testCase) {{
+  const started = Date.now();
+  let stdout = "";
+  const previousLog = console.log;
+  console.log = (...args) => {{
+    stdout += args.map((value) => typeof value === "string" ? value : JSON.stringify(value)).join(" ") + "\n";
+  }};
+
+  try {{
+    const actual = solution[TESTS.functionName](...testCase.input);
+    const durationMs = Date.now() - started;
+    return {{
+      name: testCase.name,
+      status: deepEqual(actual, testCase.expected) ? "passed" : "failed",
+      input: testCase.input,
+      expected: testCase.expected,
+      actual,
+      error: null,
+      stdout: stdout || null,
+      durationMs
+    }};
+  }} catch (error) {{
+    const durationMs = Date.now() - started;
+    return {{
+      name: testCase.name,
+      status: "error",
+      input: testCase.input,
+      expected: testCase.expected,
+      actual: null,
+      error: error.stack || String(error),
+      stdout: stdout || null,
+      durationMs
+    }};
+  }} finally {{
+    console.log = previousLog;
+  }}
+}}
+
+try {{
+  if (typeof SolutionClass !== "function") {{
+    throw new Error("solution.js must export a Solution class, for example: module.exports = Solution;");
+  }}
+  const solution = new SolutionClass();
+  const results = TESTS.cases.map((testCase) => runCase(solution, testCase));
+  if (setupOutput && results.length > 0) {{
+    results[0].stdout = setupOutput + (results[0].stdout || "");
+  }}
+  originalLog(JSON.stringify(results));
+}} catch (error) {{
+  originalLog(JSON.stringify(TESTS.cases.map((testCase) => ({{
+    name: testCase.name,
+    status: "error",
+    input: testCase.input,
+    expected: testCase.expected,
+    actual: null,
+    error: error.stack || String(error),
+    stdout: setupOutput || null,
+    durationMs: 0
+  }}))));
+}}
+"#
+    ))
+}
+
+fn execute_javascript(
+    code: &str,
+    tests: &ProblemTests,
+    timeout_ms: u64,
+) -> Result<Vec<TestResult>, String> {
+    let dir = tempdir().map_err(|error| format!("Could not create temp directory: {error}"))?;
+    let solution_path = dir.path().join("solution.js");
+    let runner_path = dir.path().join("runner.js");
+
+    fs::write(&solution_path, code)
+        .map_err(|error| format!("Could not write solution: {error}"))?;
+    fs::write(&runner_path, build_javascript_runner(tests)?)
+        .map_err(|error| format!("Could not write runner: {error}"))?;
+
+    let mut child = Command::new("node")
+        .arg(&runner_path)
+        .current_dir(dir.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Could not start node: {error}"))?;
+
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+    match child
+        .wait_timeout(timeout)
+        .map_err(|error| error.to_string())?
+    {
+        Some(_) => {
+            let output = child
+                .wait_with_output()
+                .map_err(|error| error.to_string())?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                return Ok(tests
+                    .cases
+                    .iter()
+                    .map(|case| TestResult {
+                        name: case.name.clone(),
+                        status: TestStatus::Error,
+                        input: case.input.clone(),
+                        expected: case.expected.clone(),
+                        actual: None,
+                        error: Some(stderr.clone()),
+                        stdout: None,
+                        duration_ms: 0,
+                    })
+                    .collect());
+            }
+
+            let stdout = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
+            serde_json::from_str(stdout.trim())
+                .map_err(|error| format!("Could not parse runner output: {error}"))
+        }
+        None => {
+            child.kill().map_err(|error| error.to_string())?;
+            let _ = child.wait();
+            Ok(tests
+                .cases
+                .iter()
+                .map(|case| TestResult {
+                    name: case.name.clone(),
+                    status: TestStatus::Timeout,
+                    input: case.input.clone(),
+                    expected: case.expected.clone(),
+                    actual: None,
+                    error: Some(format!("Execution exceeded {timeout_ms} ms.")),
+                    stdout: None,
+                    duration_ms: timeout_ms as u128,
+                })
+                .collect())
+        }
+    }
+}
+
+fn execute_solution(
+    language: &str,
+    code: &str,
+    tests: &ProblemTests,
+    timeout_ms: u64,
+) -> Result<Vec<TestResult>, String> {
+    match language {
+        "python" => execute_python(code, tests, timeout_ms),
+        "javascript" => execute_javascript(code, tests, timeout_ms),
+        _ => Err("Problem language is invalid.".to_string()),
+    }
+}
+
 #[tauri::command]
 fn run_tests(
     app: tauri::AppHandle,
@@ -856,7 +1069,12 @@ fn run_tests(
 ) -> Result<RunSummary, String> {
     let problem = read_problem(&problem_id)?;
     let started = Instant::now();
-    let results = execute_python(&code, &problem.tests, problem.meta.time_limit_ms)?;
+    let results = execute_solution(
+        &problem.meta.language,
+        &code,
+        &problem.tests,
+        problem.meta.time_limit_ms,
+    )?;
     let summary = RunSummary {
         passed: results
             .iter()

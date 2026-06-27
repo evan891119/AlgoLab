@@ -11,7 +11,7 @@ import {
   useRef,
   useState
 } from "react";
-import type { Difficulty, ProblemAttemptSummary, ProblemDetail, ProblemNotes, ProblemSource, ProblemStatus, ProblemSummary, RunSummary, Submission } from "@algolab/core";
+import type { Difficulty, ProblemAttemptSummary, ProblemDetail, ProblemLanguage, ProblemNotes, ProblemSource, ProblemStatus, ProblemSummary, RunSummary, Submission } from "@algolab/core";
 import {
   createProblem,
   getDraft,
@@ -54,6 +54,11 @@ const createEmptyTestCase = (index: number, parameterCount = 0): TestCaseForm =>
   expectedText: "null"
 });
 
+const starterTemplates: Record<ProblemLanguage, string> = {
+  python: "class Solution:\n    def solve(self):\n        return None\n",
+  javascript: "class Solution {\n  solve() {\n    return null;\n  }\n}\n\nmodule.exports = Solution;\n"
+};
+
 type ProblemForm = Omit<CreateProblemInput, "tags" | "testsJson"> & {
   tagsText: string;
   parametersText: string;
@@ -71,11 +76,12 @@ const initialProblemForm: ProblemForm = {
   topic: "",
   pattern: "",
   status: "new",
+  language: "python",
   functionName: "solve",
   parametersText: "",
   timeLimitMs: 2000,
   statement: "# New Problem\n\nPaste the problem statement here.",
-  starterCode: "class Solution:\n    def solve(self):\n        return None\n",
+  starterCode: starterTemplates.python,
   testCases: [createEmptyTestCase(1)]
 };
 
@@ -128,6 +134,28 @@ const parseParametersFromPython = (code: string, functionName: string) => {
     .filter(Boolean);
 };
 
+const parseParametersFromJavaScript = (code: string, functionName: string) => {
+  const signaturePattern = new RegExp(`${functionName}\\s*\\(([^)]*)\\)`);
+  const match = code.match(signaturePattern);
+  if (!match) return [];
+
+  return match[1]
+    .split(",")
+    .map((name) => name.trim())
+    .map((name) => name.replace(/=.*/, "").trim())
+    .filter(Boolean);
+};
+
+const parseParametersFromCode = (language: ProblemLanguage, code: string, functionName: string) => (
+  language === "javascript"
+    ? parseParametersFromJavaScript(code, functionName)
+    : parseParametersFromPython(code, functionName)
+);
+
+const editorLanguageForProblem = (language: ProblemLanguage) => (
+  language === "javascript" ? "javascript" : "python"
+);
+
 const fallbackParameterNames = (count: number) => Array.from({ length: count }, (_, index) => `arg${index + 1}`);
 
 const resizeArgumentTexts = (argumentTexts: string[], parameterCount: number) => [
@@ -136,7 +164,7 @@ const resizeArgumentTexts = (argumentTexts: string[], parameterCount: number) =>
 ];
 
 const problemToForm = (detail: ProblemDetail): ProblemForm => {
-  const parsedParameterNames = parseParametersFromPython(detail.starterCode, detail.meta.functionName);
+  const parsedParameterNames = parseParametersFromCode(detail.meta.language, detail.starterCode, detail.meta.functionName);
   const maxInputCount = Math.max(0, ...detail.tests.cases.map((testCase) => testCase.input.length));
   const parameterNames = parsedParameterNames.length > 0 ? parsedParameterNames : fallbackParameterNames(maxInputCount);
 
@@ -151,6 +179,7 @@ const problemToForm = (detail: ProblemDetail): ProblemForm => {
     topic: detail.meta.topic ?? "",
     pattern: detail.meta.pattern ?? "",
     status: detail.meta.status,
+    language: detail.meta.language,
     functionName: detail.meta.functionName,
     parametersText: parameterNames.join(", "),
     timeLimitMs: detail.meta.timeLimitMs,
@@ -315,15 +344,9 @@ function App() {
 
   const parameterNames = useMemo(() => {
     if (!problem) return [];
-    const signaturePattern = new RegExp(`def\\s+${problem.tests.functionName}\\s*\\(([^)]*)\\)`);
-    const match = (code.match(signaturePattern) ?? problem.starterCode.match(signaturePattern));
-    if (!match) return [];
-
-    return match[1]
-      .split(",")
-      .map((name) => name.trim())
-      .filter((name) => name && name !== "self")
-      .map((name) => name.replace(/:.*/, "").trim());
+    return parseParametersFromCode(problem.meta.language, code, problem.tests.functionName).length > 0
+      ? parseParametersFromCode(problem.meta.language, code, problem.tests.functionName)
+      : parseParametersFromCode(problem.meta.language, problem.starterCode, problem.tests.functionName);
   }, [code, problem]);
 
   useEffect(() => {
@@ -391,8 +414,21 @@ function App() {
     }));
   };
 
+  const updateProblemLanguage = (language: ProblemLanguage) => {
+    setProblemForm((current) => {
+      const starterCode = Object.values(starterTemplates).includes(current.starterCode)
+        ? starterTemplates[language]
+        : current.starterCode;
+      return {
+        ...current,
+        language,
+        starterCode
+      };
+    });
+  };
+
   const inferParametersFromStarter = () => {
-    const parameterNames = parseParametersFromPython(problemForm.starterCode, problemForm.functionName.trim());
+    const parameterNames = parseParametersFromCode(problemForm.language, problemForm.starterCode, problemForm.functionName.trim());
     if (parameterNames.length === 0) {
       setFormError("Could not infer parameters from starter code.");
       return;
@@ -500,6 +536,7 @@ function App() {
         topic: problemForm.topic?.trim() || undefined,
         pattern: problemForm.pattern?.trim() || undefined,
         status: problemForm.status,
+        language: problemForm.language,
         functionName: problemForm.functionName.trim(),
         timeLimitMs: Number(problemForm.timeLimitMs),
         statement: problemForm.statement,
@@ -854,7 +891,7 @@ function App() {
           <div className="editor-wrap">
             <Editor
               height="100%"
-              language="python"
+              language={editorLanguageForProblem(problem?.meta.language ?? "python")}
               theme="vs-dark"
               value={code}
               options={{
@@ -1005,6 +1042,16 @@ function App() {
                   onChange={(event) => updateProblemForm("functionName", event.target.value)}
                   required
                 />
+              </label>
+              <label>
+                <span>Language</span>
+                <select
+                  value={problemForm.language}
+                  onChange={(event) => updateProblemLanguage(event.target.value as ProblemLanguage)}
+                >
+                  <option value="python">Python</option>
+                  <option value="javascript">JavaScript</option>
+                </select>
               </label>
               <label>
                 <span className="field-title-row">

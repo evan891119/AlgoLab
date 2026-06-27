@@ -3,6 +3,13 @@
   "title": "Minimum Deletions to Make String Balanced",
   "difficulty": "medium",
   "tags": [],
+  "source": "custom",
+  "sourceUrl": null,
+  "examName": null,
+  "topic": null,
+  "pattern": null,
+  "status": "new",
+  "language": "javascript",
   "functionName": "solve",
   "timeLimitMs": 2000
 }

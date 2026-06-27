@@ -4,6 +4,7 @@ import {
   type Difficulty,
   type ProblemAttemptSummary,
   type ProblemDetail,
+  type ProblemLanguage,
   type ProblemNotes,
   type ProblemSource,
   type ProblemStatus,
@@ -37,6 +38,7 @@ export interface CreateProblemInput {
   topic?: string;
   pattern?: string;
   status: ProblemStatus;
+  language: ProblemLanguage;
   functionName: string;
   timeLimitMs: number;
   statement: string;
@@ -94,11 +96,12 @@ const getMockAttemptSummary = (problemId: string): ProblemAttemptSummary => {
 
 const sampleProblem: ProblemDetail = {
   meta: {
-    ...(sampleMeta as Omit<ProblemDetail["meta"], "source" | "status">),
+    ...(sampleMeta as Omit<ProblemDetail["meta"], "source" | "status" | "language">),
     source: "leetcode",
     topic: "array",
     pattern: "hash map",
-    status: "new"
+    status: "new",
+    language: "python"
   },
   statement: sampleStatement,
   starterCode: sampleStarter,
@@ -117,6 +120,7 @@ const buildProblemFromInput = (input: CreateProblemInput): ProblemDetail => ({
     topic: input.topic,
     pattern: input.pattern,
     status: input.status,
+    language: input.language,
     functionName: input.functionName,
     timeLimitMs: input.timeLimitMs
   },
