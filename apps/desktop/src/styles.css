@@ -347,25 +347,104 @@ button {
   font-size: 14px;
 }
 
-.results-grid {
+.case-results {
   display: grid;
-  gap: 6px;
-  max-height: calc(100% - 76px);
-  overflow: auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  height: calc(100% - 76px);
+  min-height: 0;
   padding: 10px 14px;
+  overflow: hidden;
 }
 
-.result-row {
-  display: grid;
-  grid-template-columns: 74px 170px 1fr 1fr 80px;
+.case-tabs {
+  display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 34px;
-  padding: 8px 10px;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.case-tab {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 14px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+.case-tab:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.case-tab.selected {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.case-tab-passed.selected {
+  border-color: var(--success-border);
+}
+
+.case-tab-failed.selected,
+.case-tab-error.selected,
+.case-tab-timeout.selected {
+  border-color: var(--danger-border);
+}
+
+.case-detail {
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--surface-elevated);
   font-size: 12px;
+}
+
+.case-detail-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+}
+
+.case-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.case-field {
+  display: grid;
+  gap: 6px;
+}
+
+.case-field span {
+  color: var(--text-muted);
+  font-weight: 680;
+}
+
+.case-field pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  color: var(--text);
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-family: Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .result-passed {

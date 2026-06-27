@@ -76,6 +76,7 @@ function App() {
   const [code, setCode] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [runSummary, setRunSummary] = useState<RunSummary | null>(null);
+  const [selectedResultIndex, setSelectedResultIndex] = useState(0);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [status, setStatus] = useState("Ready");
@@ -150,6 +151,23 @@ function App() {
     if (!problem) return "";
     return DOMPurify.sanitize(marked.parse(problem.statement) as string);
   }, [problem]);
+
+  const parameterNames = useMemo(() => {
+    if (!problem) return [];
+    const signaturePattern = new RegExp(`def\\s+${problem.tests.functionName}\\s*\\(([^)]*)\\)`);
+    const match = (code.match(signaturePattern) ?? problem.starterCode.match(signaturePattern));
+    if (!match) return [];
+
+    return match[1]
+      .split(",")
+      .map((name) => name.trim())
+      .filter((name) => name && name !== "self")
+      .map((name) => name.replace(/:.*/, "").trim());
+  }, [code, problem]);
+
+  useEffect(() => {
+    setSelectedResultIndex(0);
+  }, [runSummary]);
 
   const saveCurrentDraft = useCallback(async () => {
     if (!problem) return;
@@ -279,6 +297,7 @@ function App() {
   };
 
   const selectedProblem = problems.find((item) => item.id === selectedId);
+  const selectedResult = runSummary?.results[selectedResultIndex] ?? null;
   const layoutStyle = {
     "--problem-list-width": `${layout.problemListWidth}px`,
     "--statement-width": `${layout.statementWidth}px`,
@@ -467,18 +486,51 @@ function App() {
         {!runSummary ? (
           <div className="empty-state">Run the solution to see local test output.</div>
         ) : (
-          <div className="results-grid">
-            {runSummary.results.map((result) => (
-              <div key={result.name} className={`result-row result-${result.status}`}>
-                <span className="result-status">{result.status}</span>
-                <span className="result-name">{result.name}</span>
-                <span className="result-detail">expected {JSON.stringify(result.expected)}</span>
-                <span className="result-detail">actual {JSON.stringify(result.actual)}</span>
-                <span className="result-time">{result.durationMs} ms</span>
-                {result.stdout ? <pre className="result-stdout">{result.stdout}</pre> : null}
-                {result.error ? <pre className="result-error">{result.error}</pre> : null}
+          <div className="case-results">
+            <div className="case-tabs" role="tablist" aria-label="Test cases">
+              {runSummary.results.map((result, index) => (
+                <button
+                  key={result.name}
+                  className={index === selectedResultIndex ? `case-tab selected case-tab-${result.status}` : `case-tab case-tab-${result.status}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={index === selectedResultIndex}
+                  onClick={() => setSelectedResultIndex(index)}
+                >
+                  Case {index + 1}
+                </button>
+              ))}
+            </div>
+
+            {selectedResult ? (
+              <div className={`case-detail result-${selectedResult.status}`}>
+                <div className="case-detail-header">
+                  <span className="result-status">{selectedResult.status}</span>
+                  <span>{selectedResult.name}</span>
+                  <span className="result-time">{selectedResult.durationMs} ms</span>
+                </div>
+
+                <div className="case-fields">
+                  {selectedResult.input.map((value, index) => (
+                    <div className="case-field" key={`${selectedResult.name}-${index}`}>
+                      <span>{parameterNames[index] ?? `arg${index + 1}`} =</span>
+                      <pre>{JSON.stringify(value)}</pre>
+                    </div>
+                  ))}
+                  <div className="case-field">
+                    <span>Expected =</span>
+                    <pre>{JSON.stringify(selectedResult.expected)}</pre>
+                  </div>
+                  <div className="case-field">
+                    <span>Actual =</span>
+                    <pre>{JSON.stringify(selectedResult.actual)}</pre>
+                  </div>
+                </div>
+
+                {selectedResult.stdout ? <pre className="result-stdout">{selectedResult.stdout}</pre> : null}
+                {selectedResult.error ? <pre className="result-error">{selectedResult.error}</pre> : null}
               </div>
-            ))}
+            ) : null}
           </div>
         )}
         <div className="submission-strip">
