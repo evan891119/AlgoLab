@@ -95,6 +95,7 @@ struct TestResult {
     expected: Value,
     actual: Option<Value>,
     error: Option<String>,
+    stdout: Option<String>,
     duration_ms: u128,
 }
 
@@ -397,6 +398,8 @@ fn build_runner(tests: &ProblemTests) -> Result<String, String> {
     Ok(format!(
         r#"
 import importlib.util
+import contextlib
+import io
 import json
 import time
 import traceback
@@ -408,9 +411,11 @@ def deep_equal(left, right):
 
 def run_case(solution, case):
     started = time.perf_counter()
+    stdout_buffer = io.StringIO()
     try:
         fn = getattr(solution, TESTS["functionName"])
-        actual = fn(*case["input"])
+        with contextlib.redirect_stdout(stdout_buffer):
+            actual = fn(*case["input"])
         duration_ms = int((time.perf_counter() - started) * 1000)
         status = "passed" if deep_equal(actual, case["expected"]) else "failed"
         return {{
@@ -420,6 +425,7 @@ def run_case(solution, case):
             "expected": case["expected"],
             "actual": actual,
             "error": None,
+            "stdout": stdout_buffer.getvalue() or None,
             "durationMs": duration_ms
         }}
     except Exception:
@@ -431,14 +437,20 @@ def run_case(solution, case):
             "expected": case["expected"],
             "actual": None,
             "error": traceback.format_exc(limit=8),
+            "stdout": stdout_buffer.getvalue() or None,
             "durationMs": duration_ms
         }}
 
 spec = importlib.util.spec_from_file_location("solution", "solution.py")
 module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-solution = module.Solution()
+setup_stdout = io.StringIO()
+with contextlib.redirect_stdout(setup_stdout):
+    spec.loader.exec_module(module)
+    solution = module.Solution()
 results = [run_case(solution, case) for case in TESTS["cases"]]
+setup_output = setup_stdout.getvalue()
+if setup_output and results:
+    results[0]["stdout"] = setup_output + (results[0].get("stdout") or "")
 print(json.dumps(results))
 "#
     ))
@@ -476,6 +488,7 @@ fn execute_python(code: &str, tests: &ProblemTests, timeout_ms: u64) -> Result<V
                         expected: case.expected.clone(),
                         actual: None,
                         error: Some(stderr.clone()),
+                        stdout: None,
                         duration_ms: 0,
                     })
                     .collect());
@@ -497,6 +510,7 @@ fn execute_python(code: &str, tests: &ProblemTests, timeout_ms: u64) -> Result<V
                     expected: case.expected.clone(),
                     actual: None,
                     error: Some(format!("Execution exceeded {timeout_ms} ms.")),
+                    stdout: None,
                     duration_ms: timeout_ms as u128,
                 })
                 .collect())

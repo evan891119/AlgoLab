@@ -305,6 +305,7 @@ function App() {
                 <span className="result-detail">expected {JSON.stringify(result.expected)}</span>
                 <span className="result-detail">actual {JSON.stringify(result.actual)}</span>
                 <span className="result-time">{result.durationMs} ms</span>
+                {result.stdout ? <pre className="result-stdout">{result.stdout}</pre> : null}
                 {result.error ? <pre className="result-error">{result.error}</pre> : null}
               </div>
             ))}

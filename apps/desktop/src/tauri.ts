@@ -118,6 +118,7 @@ export function runProblemTests(problemId: string, code: string): Promise<RunSum
       input: testCase.input,
       expected: testCase.expected,
       actual: isSolved ? testCase.expected : [],
+      stdout: code.includes("print(") ? "Mock browser mode does not execute Python, but desktop mode will show real print output here." : undefined,
       durationMs: 1
     })) as RunSummary["results"];
     const summary = summarizeResults(results);

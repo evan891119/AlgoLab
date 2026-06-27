@@ -6,3 +6,8 @@ target/
 *.sqlite
 *.sqlite3
 *.tsbuildinfo
+
+# Locally imported/copied practice problems may contain proprietary statements.
+/examples/problems/*
+!/examples/problems/two-sum/
+!/examples/problems/two-sum/**

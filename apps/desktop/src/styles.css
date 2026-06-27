@@ -362,14 +362,25 @@ button {
   text-align: right;
 }
 
+.result-stdout,
 .result-error {
   grid-column: 1 / -1;
   margin: 6px 0 0;
   padding: 8px;
   overflow: auto;
+  border-radius: 6px;
+  white-space: pre-wrap;
+}
+
+.result-stdout {
+  color: #d5e6ff;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+}
+
+.result-error {
   color: #ffc8c8;
   background: #3b1f25;
-  border-radius: 6px;
 }
 
 .submission-strip {

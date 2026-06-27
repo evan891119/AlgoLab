@@ -7,6 +7,7 @@ export interface TestResult {
   expected: unknown;
   actual?: unknown;
   error?: string;
+  stdout?: string;
   durationMs: number;
 }
 
