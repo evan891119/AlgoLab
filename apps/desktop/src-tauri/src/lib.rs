@@ -145,6 +145,28 @@ struct SolutionDraft {
     updated_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ProblemNotes {
+    problem_id: String,
+    approach: String,
+    key_insight: String,
+    mistakes: String,
+    complexity: String,
+    review_notes: String,
+    updated_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProblemNotesRequest {
+    approach: String,
+    key_insight: String,
+    mistakes: String,
+    complexity: String,
+    review_notes: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Submission {
@@ -244,10 +266,32 @@ fn open_database(app: &tauri::AppHandle) -> Result<Connection, String> {
                 result_json TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS problem_notes (
+                problem_id TEXT PRIMARY KEY,
+                approach TEXT NOT NULL,
+                key_insight TEXT NOT NULL,
+                mistakes TEXT NOT NULL,
+                complexity TEXT NOT NULL,
+                review_notes TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             ",
         )
         .map_err(|error| format!("Could not initialize SQLite schema: {error}"))?;
     Ok(connection)
+}
+
+fn empty_problem_notes(problem_id: String) -> ProblemNotes {
+    ProblemNotes {
+        problem_id,
+        approach: String::new(),
+        key_insight: String::new(),
+        mistakes: String::new(),
+        complexity: String::new(),
+        review_notes: String::new(),
+        updated_at: None,
+    }
 }
 
 #[tauri::command]
@@ -468,6 +512,79 @@ fn save_draft(
         code,
         updated_at,
     })
+}
+
+#[tauri::command]
+fn get_problem_notes(app: tauri::AppHandle, problem_id: String) -> Result<ProblemNotes, String> {
+    validate_problem_id(&problem_id)?;
+    let connection = open_database(&app)?;
+    let mut statement = connection
+        .prepare(
+            "
+            SELECT problem_id, approach, key_insight, mistakes, complexity, review_notes, updated_at
+            FROM problem_notes
+            WHERE problem_id = ?1
+            ",
+        )
+        .map_err(|error| error.to_string())?;
+
+    let mut rows = statement
+        .query_map(params![problem_id.clone()], |row| {
+            Ok(ProblemNotes {
+                problem_id: row.get(0)?,
+                approach: row.get(1)?,
+                key_insight: row.get(2)?,
+                mistakes: row.get(3)?,
+                complexity: row.get(4)?,
+                review_notes: row.get(5)?,
+                updated_at: Some(row.get(6)?),
+            })
+        })
+        .map_err(|error| error.to_string())?;
+
+    match rows.next() {
+        Some(row) => row.map_err(|error| error.to_string()),
+        None => Ok(empty_problem_notes(problem_id)),
+    }
+}
+
+#[tauri::command]
+fn save_problem_notes(
+    app: tauri::AppHandle,
+    problem_id: String,
+    notes: ProblemNotesRequest,
+) -> Result<ProblemNotes, String> {
+    validate_problem_id(&problem_id)?;
+    let updated_at = Utc::now().to_rfc3339();
+    let connection = open_database(&app)?;
+    connection
+        .execute(
+            "
+            INSERT INTO problem_notes (
+                problem_id, approach, key_insight, mistakes, complexity, review_notes, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            ON CONFLICT(problem_id) DO UPDATE SET
+                approach = excluded.approach,
+                key_insight = excluded.key_insight,
+                mistakes = excluded.mistakes,
+                complexity = excluded.complexity,
+                review_notes = excluded.review_notes,
+                updated_at = excluded.updated_at
+            ",
+            params![
+                &problem_id,
+                notes.approach,
+                notes.key_insight,
+                notes.mistakes,
+                notes.complexity,
+                notes.review_notes,
+                updated_at
+            ],
+        )
+        .map_err(|error| format!("Could not save problem notes: {error}"))?;
+
+    get_problem_notes(app, problem_id)
 }
 
 #[tauri::command]
@@ -710,6 +827,8 @@ pub fn run() {
             update_problem,
             get_draft,
             save_draft,
+            get_problem_notes,
+            save_problem_notes,
             run_tests,
             list_submissions
         ])

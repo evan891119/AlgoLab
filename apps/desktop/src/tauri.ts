@@ -3,6 +3,7 @@ import {
   summarizeResults,
   type Difficulty,
   type ProblemDetail,
+  type ProblemNotes,
   type ProblemSource,
   type ProblemStatus,
   type ProblemSummary,
@@ -22,6 +23,7 @@ let mockSubmissionId = 1;
 let mockSubmissions: Submission[] = [];
 let mockCreatedProblems: ProblemDetail[] = [];
 let mockUpdatedProblems = new Map<string, ProblemDetail>();
+let mockProblemNotes = new Map<string, ProblemNotes>();
 
 export interface CreateProblemInput {
   id: string;
@@ -40,6 +42,18 @@ export interface CreateProblemInput {
   starterCode: string;
   testsJson: string;
 }
+
+export type SaveProblemNotesInput = Omit<ProblemNotes, "problemId" | "updatedAt">;
+
+const emptyProblemNotes = (problemId: string): ProblemNotes => ({
+  problemId,
+  approach: "",
+  keyInsight: "",
+  mistakes: "",
+  complexity: "",
+  reviewNotes: "",
+  updatedAt: null
+});
 
 const sampleProblem: ProblemDetail = {
   meta: {
@@ -156,6 +170,28 @@ export function saveDraft(problemId: string, code: string): Promise<SolutionDraf
   }
 
   return invoke("save_draft", { problemId, code });
+}
+
+export function getProblemNotes(problemId: string): Promise<ProblemNotes> {
+  if (!hasTauriRuntime()) {
+    return Promise.resolve(mockProblemNotes.get(problemId) ?? emptyProblemNotes(problemId));
+  }
+
+  return invoke("get_problem_notes", { problemId });
+}
+
+export function saveProblemNotes(problemId: string, notes: SaveProblemNotesInput): Promise<ProblemNotes> {
+  if (!hasTauriRuntime()) {
+    const savedNotes: ProblemNotes = {
+      problemId,
+      ...notes,
+      updatedAt: new Date().toISOString()
+    };
+    mockProblemNotes = new Map(mockProblemNotes).set(problemId, savedNotes);
+    return Promise.resolve(savedNotes);
+  }
+
+  return invoke("save_problem_notes", { problemId, notes });
 }
 
 export function runProblemTests(problemId: string, code: string): Promise<RunSummary> {

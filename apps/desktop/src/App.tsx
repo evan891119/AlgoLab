@@ -11,11 +11,24 @@ import {
   useRef,
   useState
 } from "react";
-import type { Difficulty, ProblemDetail, ProblemSource, ProblemStatus, ProblemSummary, RunSummary, Submission } from "@algolab/core";
-import { createProblem, getDraft, getProblem, listProblems, listSubmissions, runProblemTests, saveDraft, updateProblem, type CreateProblemInput } from "./tauri";
+import type { Difficulty, ProblemDetail, ProblemNotes, ProblemSource, ProblemStatus, ProblemSummary, RunSummary, Submission } from "@algolab/core";
+import {
+  createProblem,
+  getDraft,
+  getProblem,
+  getProblemNotes,
+  listProblems,
+  listSubmissions,
+  runProblemTests,
+  saveDraft,
+  saveProblemNotes,
+  updateProblem,
+  type CreateProblemInput
+} from "./tauri";
 
 type LoadState = "idle" | "loading" | "error";
 type ProblemFormMode = "create" | "edit";
+type ProblemPanelTab = "statement" | "notes";
 
 interface TestCaseForm {
   id: string;
@@ -52,6 +65,16 @@ const initialProblemForm: ProblemForm = {
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const createEmptyProblemNotes = (problemId: string): ProblemNotes => ({
+  problemId,
+  approach: "",
+  keyInsight: "",
+  mistakes: "",
+  complexity: "",
+  reviewNotes: "",
+  updatedAt: null
+});
 
 const problemToForm = (detail: ProblemDetail): ProblemForm => ({
   id: detail.meta.id,
@@ -107,6 +130,8 @@ function App() {
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
+  const [problemNotes, setProblemNotes] = useState<ProblemNotes | null>(null);
+  const [problemPanelTab, setProblemPanelTab] = useState<ProblemPanelTab>("statement");
   const [code, setCode] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [runSummary, setRunSummary] = useState<RunSummary | null>(null);
@@ -160,10 +185,12 @@ function App() {
     let cancelled = false;
     setLoadState("loading");
     setRunSummary(null);
-    Promise.all([getProblem(selectedId), getDraft(selectedId), listSubmissions(selectedId)])
-      .then(([detail, draft, submissionItems]) => {
+    setProblemNotes(null);
+    Promise.all([getProblem(selectedId), getDraft(selectedId), getProblemNotes(selectedId), listSubmissions(selectedId)])
+      .then(([detail, draft, notes, submissionItems]) => {
         if (cancelled) return;
         setProblem(detail);
+        setProblemNotes(notes);
         setCode(draft?.code ?? detail.starterCode);
         setSavedAt(draft?.updatedAt ?? null);
         setSubmissions(submissionItems);
@@ -220,6 +247,31 @@ function App() {
     setSubmissions(await listSubmissions(problem.meta.id));
     setStatus(`${summary.passed} passed, ${summary.failed} failed in ${summary.durationMs} ms`);
   }, [code, problem, saveCurrentDraft]);
+
+  const updateProblemNotes = <Key extends keyof Omit<ProblemNotes, "problemId" | "updatedAt">>(
+    key: Key,
+    value: ProblemNotes[Key]
+  ) => {
+    setProblemNotes((current) => ({
+      ...(current ?? createEmptyProblemNotes(problem?.meta.id ?? "")),
+      [key]: value
+    }));
+  };
+
+  const saveCurrentNotes = useCallback(async () => {
+    if (!problem) return;
+    const currentNotes = problemNotes ?? createEmptyProblemNotes(problem.meta.id);
+    setStatus("Saving notes...");
+    const savedNotes = await saveProblemNotes(problem.meta.id, {
+      approach: currentNotes.approach,
+      keyInsight: currentNotes.keyInsight,
+      mistakes: currentNotes.mistakes,
+      complexity: currentNotes.complexity,
+      reviewNotes: currentNotes.reviewNotes
+    });
+    setProblemNotes(savedNotes);
+    setStatus("Notes saved");
+  }, [problem, problemNotes]);
 
   const updateProblemForm = <Key extends keyof typeof problemForm>(key: Key, value: (typeof problemForm)[Key]) => {
     setProblemForm((current) => ({ ...current, [key]: value }));
@@ -475,10 +527,84 @@ function App() {
 
         <section className="statement-pane">
           <div className="panel-header">
-            <span>{selectedProblem?.title ?? "Problem"}</span>
-            {problem ? <strong>{problem.meta.tags.join(", ")}</strong> : null}
+            <div className="panel-tabs" role="tablist" aria-label="Problem panel">
+              <button
+                className={problemPanelTab === "statement" ? "panel-tab selected" : "panel-tab"}
+                type="button"
+                role="tab"
+                aria-selected={problemPanelTab === "statement"}
+                onClick={() => setProblemPanelTab("statement")}
+              >
+                Statement
+              </button>
+              <button
+                className={problemPanelTab === "notes" ? "panel-tab selected" : "panel-tab"}
+                type="button"
+                role="tab"
+                aria-selected={problemPanelTab === "notes"}
+                onClick={() => setProblemPanelTab("notes")}
+              >
+                Notes
+              </button>
+            </div>
+            {problemPanelTab === "notes" ? (
+              <button className="secondary-button compact-button" disabled={!problem} onClick={saveCurrentNotes}>
+                Save Notes
+              </button>
+            ) : problem ? (
+              <strong>{problem.meta.tags.join(", ")}</strong>
+            ) : null}
           </div>
-          <article className="statement" dangerouslySetInnerHTML={{ __html: statementHtml }} />
+          {problemPanelTab === "statement" ? (
+            <article className="statement" dangerouslySetInnerHTML={{ __html: statementHtml }} />
+          ) : (
+            <div className="notes-panel">
+              <div className="notes-meta">
+                <span>{selectedProblem?.title ?? "Problem"}</span>
+                <span>{problemNotes?.updatedAt ? `Saved ${new Date(problemNotes.updatedAt).toLocaleTimeString()}` : "No notes saved"}</span>
+              </div>
+              <label>
+                <span>Approach</span>
+                <textarea
+                  value={problemNotes?.approach ?? ""}
+                  placeholder="Outline the solution strategy."
+                  onChange={(event) => updateProblemNotes("approach", event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Key Insight</span>
+                <textarea
+                  value={problemNotes?.keyInsight ?? ""}
+                  placeholder="What made the problem click?"
+                  onChange={(event) => updateProblemNotes("keyInsight", event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Mistakes</span>
+                <textarea
+                  value={problemNotes?.mistakes ?? ""}
+                  placeholder="Record wrong assumptions, edge cases, or bugs."
+                  onChange={(event) => updateProblemNotes("mistakes", event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Complexity</span>
+                <textarea
+                  value={problemNotes?.complexity ?? ""}
+                  placeholder="Time and space complexity."
+                  onChange={(event) => updateProblemNotes("complexity", event.target.value)}
+                />
+              </label>
+              <label>
+                <span>Review Notes</span>
+                <textarea
+                  value={problemNotes?.reviewNotes ?? ""}
+                  placeholder="Things to remember before retrying."
+                  onChange={(event) => updateProblemNotes("reviewNotes", event.target.value)}
+                />
+              </label>
+            </div>
+          )}
         </section>
 
         <div

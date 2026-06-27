@@ -217,8 +217,39 @@ button {
   font-weight: 560;
 }
 
+.panel-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.panel-tab {
+  height: 28px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+.panel-tab:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.panel-tab.selected {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
 .list-scroll,
 .statement,
+.notes-panel,
 .editor-wrap {
   height: calc(100% - 42px);
 }
@@ -376,6 +407,55 @@ button {
   background: transparent;
   border: 0;
   border-radius: 0;
+}
+
+.notes-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.notes-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.notes-panel label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.notes-panel label span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.notes-panel textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: 10px;
+  color: var(--text);
+  background: var(--surface-muted);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  outline: none;
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notes-panel textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(76 141 255 / 0.16);
 }
 
 .editor-wrap {

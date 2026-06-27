@@ -46,6 +46,16 @@ export interface ProblemDetail {
   tests: ProblemTests;
 }
 
+export interface ProblemNotes {
+  problemId: string;
+  approach: string;
+  keyInsight: string;
+  mistakes: string;
+  complexity: string;
+  reviewNotes: string;
+  updatedAt: string | null;
+}
+
 export function validateProblemMeta(value: unknown): ProblemMeta {
   if (!value || typeof value !== "object") {
     throw new Error("Problem meta must be an object.");
