@@ -1,10 +1,18 @@
 export type Difficulty = "easy" | "medium" | "hard";
+export type ProblemSource = "leetcode" | "hackerrank" | "codesignal" | "company" | "school" | "custom";
+export type ProblemStatus = "new" | "attempted" | "solved" | "review";
 
 export interface ProblemMeta {
   id: string;
   title: string;
   difficulty: Difficulty;
   tags: string[];
+  source: ProblemSource;
+  sourceUrl?: string;
+  examName?: string;
+  topic?: string;
+  pattern?: string;
+  status: ProblemStatus;
   functionName: string;
   timeLimitMs: number;
 }
@@ -26,6 +34,9 @@ export interface ProblemSummary {
   title: string;
   difficulty: Difficulty;
   tags: string[];
+  source: ProblemSource;
+  topic?: string;
+  status: ProblemStatus;
 }
 
 export interface ProblemDetail {
@@ -45,6 +56,21 @@ export function validateProblemMeta(value: unknown): ProblemMeta {
   if (difficulty !== "easy" && difficulty !== "medium" && difficulty !== "hard") {
     throw new Error("Problem difficulty must be easy, medium, or hard.");
   }
+  const source = meta.source ?? "custom";
+  if (
+    source !== "leetcode" &&
+    source !== "hackerrank" &&
+    source !== "codesignal" &&
+    source !== "company" &&
+    source !== "school" &&
+    source !== "custom"
+  ) {
+    throw new Error("Problem source is invalid.");
+  }
+  const status = meta.status ?? "new";
+  if (status !== "new" && status !== "attempted" && status !== "solved" && status !== "review") {
+    throw new Error("Problem status is invalid.");
+  }
 
   if (
     typeof meta.id !== "string" ||
@@ -61,6 +87,12 @@ export function validateProblemMeta(value: unknown): ProblemMeta {
     title: meta.title,
     difficulty,
     tags: meta.tags.map(String),
+    source,
+    sourceUrl: typeof meta.sourceUrl === "string" && meta.sourceUrl ? meta.sourceUrl : undefined,
+    examName: typeof meta.examName === "string" && meta.examName ? meta.examName : undefined,
+    topic: typeof meta.topic === "string" && meta.topic ? meta.topic : undefined,
+    pattern: typeof meta.pattern === "string" && meta.pattern ? meta.pattern : undefined,
+    status,
     functionName: meta.functionName,
     timeLimitMs: meta.timeLimitMs
   };

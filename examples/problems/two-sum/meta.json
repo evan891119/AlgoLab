@@ -3,6 +3,10 @@
   "title": "Two Sum",
   "difficulty": "easy",
   "tags": ["array", "hash-map"],
+  "source": "leetcode",
+  "topic": "array",
+  "pattern": "hash map",
+  "status": "new",
   "functionName": "twoSum",
   "timeLimitMs": 2000
 }

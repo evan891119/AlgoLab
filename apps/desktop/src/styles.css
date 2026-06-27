@@ -258,6 +258,52 @@ button {
   font-weight: 650;
 }
 
+.problem-meta-line {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 6px;
+  color: var(--text-subtle);
+  font-size: 11px;
+  font-weight: 620;
+  overflow: hidden;
+}
+
+.problem-meta-line span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+}
+
+.status-new {
+  color: var(--text-muted);
+}
+
+.status-attempted {
+  color: var(--warning);
+}
+
+.status-solved {
+  color: var(--success);
+}
+
+.status-review {
+  color: #d7b8ff;
+}
+
 .difficulty {
   text-transform: capitalize;
   font-size: 12px;
@@ -577,6 +623,17 @@ button {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.form-section {
+  display: grid;
+  gap: 8px;
+}
+
+.section-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 720;
 }
 
 .form-grid label,

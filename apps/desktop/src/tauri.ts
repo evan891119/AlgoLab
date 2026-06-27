@@ -1,5 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import { summarizeResults, type Difficulty, type ProblemDetail, type ProblemSummary, type RunSummary, type SolutionDraft, type Submission } from "@algolab/core";
+import {
+  summarizeResults,
+  type Difficulty,
+  type ProblemDetail,
+  type ProblemSource,
+  type ProblemStatus,
+  type ProblemSummary,
+  type RunSummary,
+  type SolutionDraft,
+  type Submission
+} from "@algolab/core";
 import sampleMeta from "../../../examples/problems/two-sum/meta.json";
 import sampleStatement from "../../../examples/problems/two-sum/problem.md?raw";
 import sampleStarter from "../../../examples/problems/two-sum/starter.py?raw";
@@ -18,6 +28,12 @@ export interface CreateProblemInput {
   title: string;
   difficulty: Difficulty;
   tags: string[];
+  source: ProblemSource;
+  sourceUrl?: string;
+  examName?: string;
+  topic?: string;
+  pattern?: string;
+  status: ProblemStatus;
   functionName: string;
   timeLimitMs: number;
   statement: string;
@@ -26,7 +42,13 @@ export interface CreateProblemInput {
 }
 
 const sampleProblem: ProblemDetail = {
-  meta: sampleMeta as ProblemDetail["meta"],
+  meta: {
+    ...(sampleMeta as Omit<ProblemDetail["meta"], "source" | "status">),
+    source: "leetcode",
+    topic: "array",
+    pattern: "hash map",
+    status: "new"
+  },
   statement: sampleStatement,
   starterCode: sampleStarter,
   tests: sampleTests as ProblemDetail["tests"]
@@ -38,6 +60,12 @@ const buildProblemFromInput = (input: CreateProblemInput): ProblemDetail => ({
     title: input.title,
     difficulty: input.difficulty,
     tags: input.tags,
+    source: input.source,
+    sourceUrl: input.sourceUrl,
+    examName: input.examName,
+    topic: input.topic,
+    pattern: input.pattern,
+    status: input.status,
     functionName: input.functionName,
     timeLimitMs: input.timeLimitMs
   },
@@ -58,7 +86,10 @@ export function listProblems(): Promise<ProblemSummary[]> {
         id: problem.meta.id,
         title: problem.meta.title,
         difficulty: problem.meta.difficulty,
-        tags: problem.meta.tags
+        tags: problem.meta.tags,
+        source: problem.meta.source,
+        topic: problem.meta.topic,
+        status: problem.meta.status
       }))
     );
   }

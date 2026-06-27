@@ -11,7 +11,7 @@ import {
   useRef,
   useState
 } from "react";
-import type { Difficulty, ProblemDetail, ProblemSummary, RunSummary, Submission } from "@algolab/core";
+import type { Difficulty, ProblemDetail, ProblemSource, ProblemStatus, ProblemSummary, RunSummary, Submission } from "@algolab/core";
 import { createProblem, getDraft, getProblem, listProblems, listSubmissions, runProblemTests, saveDraft, updateProblem, type CreateProblemInput } from "./tauri";
 
 type LoadState = "idle" | "loading" | "error";
@@ -38,6 +38,12 @@ const initialProblemForm: ProblemForm = {
   title: "",
   difficulty: "easy",
   tagsText: "",
+  source: "custom",
+  sourceUrl: "",
+  examName: "",
+  topic: "",
+  pattern: "",
+  status: "new",
   functionName: "solve",
   timeLimitMs: 2000,
   statement: "# New Problem\n\nPaste the problem statement here.",
@@ -52,6 +58,12 @@ const problemToForm = (detail: ProblemDetail): ProblemForm => ({
   title: detail.meta.title,
   difficulty: detail.meta.difficulty,
   tagsText: detail.meta.tags.join(", "),
+  source: detail.meta.source,
+  sourceUrl: detail.meta.sourceUrl ?? "",
+  examName: detail.meta.examName ?? "",
+  topic: detail.meta.topic ?? "",
+  pattern: detail.meta.pattern ?? "",
+  status: detail.meta.status,
   functionName: detail.meta.functionName,
   timeLimitMs: detail.meta.timeLimitMs,
   statement: detail.statement,
@@ -66,6 +78,28 @@ const problemToForm = (detail: ProblemDetail): ProblemForm => ({
 
 function difficultyClass(difficulty: ProblemSummary["difficulty"]) {
   return `difficulty difficulty-${difficulty}`;
+}
+
+function sourceLabel(source: ProblemSource) {
+  const labels: Record<ProblemSource, string> = {
+    leetcode: "LeetCode",
+    hackerrank: "HackerRank",
+    codesignal: "CodeSignal",
+    company: "Company",
+    school: "School",
+    custom: "Custom"
+  };
+  return labels[source];
+}
+
+function statusLabel(status: ProblemStatus) {
+  const labels: Record<ProblemStatus, string> = {
+    new: "New",
+    attempted: "Attempted",
+    solved: "Solved",
+    review: "Review"
+  };
+  return labels[status];
 }
 
 function App() {
@@ -273,6 +307,12 @@ function App() {
           .split(",")
           .map((tag) => tag.trim())
           .filter(Boolean),
+        source: problemForm.source,
+        sourceUrl: problemForm.sourceUrl?.trim() || undefined,
+        examName: problemForm.examName?.trim() || undefined,
+        topic: problemForm.topic?.trim() || undefined,
+        pattern: problemForm.pattern?.trim() || undefined,
+        status: problemForm.status,
         functionName: problemForm.functionName.trim(),
         timeLimitMs: Number(problemForm.timeLimitMs),
         statement: problemForm.statement,
@@ -415,6 +455,11 @@ function App() {
               >
                 <span className="problem-title">{item.title}</span>
                 <span className={difficultyClass(item.difficulty)}>{item.difficulty}</span>
+                <span className="problem-meta-line">
+                  <span>{sourceLabel(item.source)}</span>
+                  <span className={`status-pill status-${item.status}`}>{statusLabel(item.status)}</span>
+                  {item.topic ? <span>{item.topic}</span> : null}
+                </span>
               </button>
             ))}
           </div>
@@ -623,6 +668,70 @@ function App() {
                   required
                 />
               </label>
+            </div>
+
+            <div className="form-section">
+              <div className="section-title">Practice Metadata</div>
+              <div className="form-grid">
+                <label>
+                  <span>Source</span>
+                  <select
+                    value={problemForm.source}
+                    onChange={(event) => updateProblemForm("source", event.target.value as ProblemSource)}
+                  >
+                    <option value="custom">Custom</option>
+                    <option value="leetcode">LeetCode</option>
+                    <option value="hackerrank">HackerRank</option>
+                    <option value="codesignal">CodeSignal</option>
+                    <option value="company">Company</option>
+                    <option value="school">School</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select
+                    value={problemForm.status}
+                    onChange={(event) => updateProblemForm("status", event.target.value as ProblemStatus)}
+                  >
+                    <option value="new">New</option>
+                    <option value="attempted">Attempted</option>
+                    <option value="solved">Solved</option>
+                    <option value="review">Review</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Topic</span>
+                  <input
+                    value={problemForm.topic ?? ""}
+                    placeholder="array, graph, dp"
+                    onChange={(event) => updateProblemForm("topic", event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Pattern</span>
+                  <input
+                    value={problemForm.pattern ?? ""}
+                    placeholder="two pointers, prefix sum"
+                    onChange={(event) => updateProblemForm("pattern", event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Exam Name</span>
+                  <input
+                    value={problemForm.examName ?? ""}
+                    placeholder="company phone screen"
+                    onChange={(event) => updateProblemForm("examName", event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Source URL</span>
+                  <input
+                    value={problemForm.sourceUrl ?? ""}
+                    placeholder="https://..."
+                    onChange={(event) => updateProblemForm("sourceUrl", event.target.value)}
+                  />
+                </label>
+              </div>
             </div>
 
             <label className="stacked-field">
