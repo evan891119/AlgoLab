@@ -680,7 +680,8 @@ button {
   position: fixed;
   inset: 0;
   display: grid;
-  place-items: center;
+  align-items: start;
+  justify-items: center;
   padding: 28px;
   background: rgb(0 0 0 / 0.55);
   z-index: 10;
@@ -688,7 +689,8 @@ button {
 
 .problem-modal {
   display: grid;
-  grid-template-rows: auto auto minmax(120px, auto) minmax(0, 1fr) auto auto;
+  grid-template-rows: none;
+  align-content: start;
   gap: 14px;
   width: min(1080px, calc(100vw - 56px));
   max-height: calc(100vh - 56px);
@@ -814,29 +816,28 @@ button {
 }
 
 .stacked-field textarea {
-  min-height: 0;
-  height: 100%;
+  min-height: 116px;
   padding: 10px;
-  resize: none;
+  resize: vertical;
   font-family: Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
 }
 
 .problem-modal > .stacked-field textarea {
-  min-height: 116px;
+  min-height: 150px;
 }
 
 .split-fields {
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-rows: minmax(110px, auto) minmax(170px, auto);
+  grid-template-rows: auto auto;
   gap: 14px;
   min-height: 0;
 }
 
 .split-fields > .stacked-field textarea {
-  min-height: 96px;
+  min-height: 116px;
 }
 
 .testcase-panel {
@@ -877,7 +878,7 @@ button {
 
 .testcase-row {
   display: grid;
-  grid-template-columns: minmax(140px, 0.65fr) minmax(320px, 1.55fr) minmax(220px, 1fr) 30px;
+  grid-template-columns: minmax(120px, 0.45fr) minmax(320px, 1.7fr) minmax(180px, 0.75fr) 30px;
   align-items: end;
   gap: 8px;
   padding: 10px;
@@ -890,6 +891,29 @@ button {
   display: grid;
   gap: 6px;
   min-width: 0;
+}
+
+.testcase-name-field {
+  align-self: end;
+}
+
+.testcase-arguments {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.testcase-no-args {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  color: var(--text-subtle);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 12px;
 }
 
 .field-hint {

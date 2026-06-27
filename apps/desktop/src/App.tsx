@@ -34,18 +34,22 @@ type ProblemPanelTab = "statement" | "notes";
 interface TestCaseForm {
   id: string;
   name: string;
-  inputText: string;
+  argumentTexts: string[];
   expectedText: string;
 }
 
-const createEmptyTestCase = (index: number): TestCaseForm => ({
+const createEmptyTestCase = (index: number, parameterCount = 0): TestCaseForm => ({
   id: crypto.randomUUID(),
   name: `example ${index}`,
-  inputText: "[]",
+  argumentTexts: Array.from({ length: parameterCount }, () => "null"),
   expectedText: "null"
 });
 
-type ProblemForm = Omit<CreateProblemInput, "tags" | "testsJson"> & { tagsText: string; testCases: TestCaseForm[] };
+type ProblemForm = Omit<CreateProblemInput, "tags" | "testsJson"> & {
+  tagsText: string;
+  parametersText: string;
+  testCases: TestCaseForm[];
+};
 
 const initialProblemForm: ProblemForm = {
   id: "",
@@ -59,6 +63,7 @@ const initialProblemForm: ProblemForm = {
   pattern: "",
   status: "new",
   functionName: "solve",
+  parametersText: "",
   timeLimitMs: 2000,
   statement: "# New Problem\n\nPaste the problem statement here.",
   starterCode: "class Solution:\n    def solve(self):\n        return None\n",
@@ -87,28 +92,60 @@ const createEmptyAttemptSummary = (problemId: string): ProblemAttemptSummary => 
   solved: false
 });
 
-const problemToForm = (detail: ProblemDetail): ProblemForm => ({
-  id: detail.meta.id,
-  title: detail.meta.title,
-  difficulty: detail.meta.difficulty,
-  tagsText: detail.meta.tags.join(", "),
-  source: detail.meta.source,
-  sourceUrl: detail.meta.sourceUrl ?? "",
-  examName: detail.meta.examName ?? "",
-  topic: detail.meta.topic ?? "",
-  pattern: detail.meta.pattern ?? "",
-  status: detail.meta.status,
-  functionName: detail.meta.functionName,
-  timeLimitMs: detail.meta.timeLimitMs,
-  statement: detail.statement,
-  starterCode: detail.starterCode,
-  testCases: detail.tests.cases.map((testCase, index) => ({
-    id: crypto.randomUUID(),
-    name: testCase.name || `example ${index + 1}`,
-    inputText: JSON.stringify(testCase.input),
-    expectedText: JSON.stringify(testCase.expected)
-  }))
-});
+const parseParametersFromText = (value: string) => value
+  .split(",")
+  .map((name) => name.trim())
+  .filter(Boolean);
+
+const parseParametersFromPython = (code: string, functionName: string) => {
+  const signaturePattern = new RegExp(`def\\s+${functionName}\\s*\\(([^)]*)\\)`);
+  const match = code.match(signaturePattern);
+  if (!match) return [];
+
+  return match[1]
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name && name !== "self")
+    .map((name) => name.replace(/:.*/, "").replace(/=.*/, "").trim())
+    .filter(Boolean);
+};
+
+const fallbackParameterNames = (count: number) => Array.from({ length: count }, (_, index) => `arg${index + 1}`);
+
+const resizeArgumentTexts = (argumentTexts: string[], parameterCount: number) => [
+  ...argumentTexts.slice(0, parameterCount),
+  ...Array.from({ length: Math.max(0, parameterCount - argumentTexts.length) }, () => "null")
+];
+
+const problemToForm = (detail: ProblemDetail): ProblemForm => {
+  const parsedParameterNames = parseParametersFromPython(detail.starterCode, detail.meta.functionName);
+  const maxInputCount = Math.max(0, ...detail.tests.cases.map((testCase) => testCase.input.length));
+  const parameterNames = parsedParameterNames.length > 0 ? parsedParameterNames : fallbackParameterNames(maxInputCount);
+
+  return {
+    id: detail.meta.id,
+    title: detail.meta.title,
+    difficulty: detail.meta.difficulty,
+    tagsText: detail.meta.tags.join(", "),
+    source: detail.meta.source,
+    sourceUrl: detail.meta.sourceUrl ?? "",
+    examName: detail.meta.examName ?? "",
+    topic: detail.meta.topic ?? "",
+    pattern: detail.meta.pattern ?? "",
+    status: detail.meta.status,
+    functionName: detail.meta.functionName,
+    parametersText: parameterNames.join(", "),
+    timeLimitMs: detail.meta.timeLimitMs,
+    statement: detail.statement,
+    starterCode: detail.starterCode,
+    testCases: detail.tests.cases.map((testCase, index) => ({
+      id: crypto.randomUUID(),
+      name: testCase.name || `example ${index + 1}`,
+      argumentTexts: resizeArgumentTexts(testCase.input.map((value) => JSON.stringify(value)), parameterNames.length),
+      expectedText: JSON.stringify(testCase.expected)
+    }))
+  };
+};
 
 function difficultyClass(difficulty: ProblemSummary["difficulty"]) {
   return `difficulty difficulty-${difficulty}`;
@@ -315,6 +352,29 @@ function App() {
     setProblemForm((current) => ({ ...current, [key]: value }));
   };
 
+  const updateParametersText = (value: string) => {
+    const parameterCount = parseParametersFromText(value).length;
+    setProblemForm((current) => ({
+      ...current,
+      parametersText: value,
+      testCases: current.testCases.map((testCase) => ({
+        ...testCase,
+        argumentTexts: resizeArgumentTexts(testCase.argumentTexts, parameterCount)
+      }))
+    }));
+  };
+
+  const inferParametersFromStarter = () => {
+    const parameterNames = parseParametersFromPython(problemForm.starterCode, problemForm.functionName.trim());
+    if (parameterNames.length === 0) {
+      setFormError("Could not infer parameters from starter code.");
+      return;
+    }
+
+    setFormError(null);
+    updateParametersText(parameterNames.join(", "));
+  };
+
   const updateTestCase = (caseId: string, patch: Partial<TestCaseForm>) => {
     setProblemForm((current) => ({
       ...current,
@@ -322,10 +382,23 @@ function App() {
     }));
   };
 
-  const addTestCase = () => {
+  const updateTestCaseArgument = (caseId: string, parameterIndex: number, value: string) => {
     setProblemForm((current) => ({
       ...current,
-      testCases: [...current.testCases, createEmptyTestCase(current.testCases.length + 1)]
+      testCases: current.testCases.map((testCase) => {
+        if (testCase.id !== caseId) return testCase;
+        const argumentTexts = [...testCase.argumentTexts];
+        argumentTexts[parameterIndex] = value;
+        return { ...testCase, argumentTexts };
+      })
+    }));
+  };
+
+  const addTestCase = () => {
+    const parameterCount = parseParametersFromText(problemForm.parametersText).length;
+    setProblemForm((current) => ({
+      ...current,
+      testCases: [...current.testCases, createEmptyTestCase(current.testCases.length + 1, parameterCount)]
     }));
   };
 
@@ -339,15 +412,12 @@ function App() {
   };
 
   const buildTestsJson = () => {
+    const parameterNames = parseParametersFromText(problemForm.parametersText);
     const cases = problemForm.testCases.map((testCase) => ({
       name: testCase.name.trim() || "test case",
-      input: JSON.parse(testCase.inputText),
+      input: parameterNames.map((_, index) => JSON.parse(testCase.argumentTexts[index] ?? "null")),
       expected: JSON.parse(testCase.expectedText)
     }));
-
-    if (cases.some((testCase) => !Array.isArray(testCase.input))) {
-      throw new Error("Each Arguments value must be a JSON array, for example [[2,7,11,15],9].");
-    }
 
     return JSON.stringify(
       {
@@ -429,6 +499,7 @@ function App() {
   const selectedProblem = problems.find((item) => item.id === selectedId);
   const selectedResult = runSummary?.results[selectedResultIndex] ?? null;
   const currentAttemptSummary = attemptSummary ?? createEmptyAttemptSummary(problem?.meta.id ?? "");
+  const formParameterNames = parseParametersFromText(problemForm.parametersText);
   const layoutStyle = {
     "--problem-list-width": `${layout.problemListWidth}px`,
     "--statement-width": `${layout.statementWidth}px`,
@@ -825,6 +896,19 @@ function App() {
                 />
               </label>
               <label>
+                <span className="field-title-row">
+                  <span>Parameters</span>
+                  <button className="secondary-button compact-button" type="button" onClick={inferParametersFromStarter}>
+                    Infer
+                  </button>
+                </span>
+                <input
+                  value={problemForm.parametersText}
+                  placeholder="nums, target"
+                  onChange={(event) => updateParametersText(event.target.value)}
+                />
+              </label>
+              <label>
                 <span>Tags</span>
                 <input
                   value={problemForm.tagsText}
@@ -934,21 +1018,29 @@ function App() {
                 <div className="testcase-list">
                   {problemForm.testCases.map((testCase, index) => (
                     <div className="testcase-row" key={testCase.id}>
-                      <label>
+                      <label className="testcase-name-field">
                         <span>Name</span>
                         <input
                           value={testCase.name}
                           onChange={(event) => updateTestCase(testCase.id, { name: event.target.value })}
                         />
                       </label>
-                      <label>
-                        <span>Arguments JSON</span>
-                        <input
-                          value={testCase.inputText}
-                          placeholder="[[2,7,11,15],9]"
-                          onChange={(event) => updateTestCase(testCase.id, { inputText: event.target.value })}
-                        />
-                      </label>
+                      <div className="testcase-arguments">
+                        {formParameterNames.length === 0 ? (
+                          <div className="testcase-no-args">No parameters defined. This case will call the function with no arguments.</div>
+                        ) : (
+                          formParameterNames.map((parameterName, parameterIndex) => (
+                            <label key={`${testCase.id}-${parameterName}-${parameterIndex}`}>
+                              <span>{parameterName}</span>
+                              <input
+                                value={testCase.argumentTexts[parameterIndex] ?? "null"}
+                                placeholder={parameterIndex === 0 ? "[2,7,11,15]" : "9"}
+                                onChange={(event) => updateTestCaseArgument(testCase.id, parameterIndex, event.target.value)}
+                              />
+                            </label>
+                          ))
+                        )}
+                      </div>
                       <label>
                         <span>Expected JSON</span>
                         <input
@@ -969,7 +1061,7 @@ function App() {
                     </div>
                   ))}
                 </div>
-                <p className="field-hint">Arguments must be a JSON array of function arguments. For Two Sum, use [[2,7,11,15],9].</p>
+                <p className="field-hint">Each parameter value must be JSON. Strings need quotes, arrays use brackets, and objects use braces.</p>
               </div>
             </div>
 
