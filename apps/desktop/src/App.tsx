@@ -31,6 +31,15 @@ type LoadState = "idle" | "loading" | "error";
 type ProblemFormMode = "create" | "edit";
 type ProblemPanelTab = "statement" | "notes";
 
+interface ProblemFilters {
+  search: string;
+  source: "all" | ProblemSource;
+  difficulty: "all" | Difficulty;
+  status: "all" | ProblemStatus;
+  topic: string;
+  tag: string;
+}
+
 interface TestCaseForm {
   id: string;
   name: string;
@@ -68,6 +77,15 @@ const initialProblemForm: ProblemForm = {
   statement: "# New Problem\n\nPaste the problem statement here.",
   starterCode: "class Solution:\n    def solve(self):\n        return None\n",
   testCases: [createEmptyTestCase(1)]
+};
+
+const initialProblemFilters: ProblemFilters = {
+  search: "",
+  source: "all",
+  difficulty: "all",
+  status: "all",
+  topic: "",
+  tag: ""
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
@@ -192,6 +210,7 @@ function formatShortDateTime(value: string | null) {
 function App() {
   const workspaceRef = useRef<HTMLElement | null>(null);
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
+  const [problemFilters, setProblemFilters] = useState<ProblemFilters>(initialProblemFilters);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
   const [problemNotes, setProblemNotes] = useState<ProblemNotes | null>(null);
@@ -222,6 +241,14 @@ function App() {
     setSelectedId(nextSelectedId ?? selectedId ?? items[0]?.id ?? null);
     return items;
   }, [selectedId]);
+
+  const updateProblemFilter = <Key extends keyof ProblemFilters>(key: Key, value: ProblemFilters[Key]) => {
+    setProblemFilters((current) => ({ ...current, [key]: value }));
+  };
+
+  const clearProblemFilters = () => {
+    setProblemFilters(initialProblemFilters);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -497,6 +524,34 @@ function App() {
   };
 
   const selectedProblem = problems.find((item) => item.id === selectedId);
+  const filteredProblems = useMemo(() => {
+    const search = problemFilters.search.trim().toLowerCase();
+    const topic = problemFilters.topic.trim().toLowerCase();
+    const tag = problemFilters.tag.trim().toLowerCase();
+
+    return problems.filter((item) => {
+      const status = effectiveStatus(item);
+      if (search && !item.title.toLowerCase().includes(search) && !item.id.toLowerCase().includes(search)) {
+        return false;
+      }
+      if (problemFilters.source !== "all" && item.source !== problemFilters.source) {
+        return false;
+      }
+      if (problemFilters.difficulty !== "all" && item.difficulty !== problemFilters.difficulty) {
+        return false;
+      }
+      if (problemFilters.status !== "all" && status !== problemFilters.status) {
+        return false;
+      }
+      if (topic && !(item.topic ?? "").toLowerCase().includes(topic)) {
+        return false;
+      }
+      if (tag && !item.tags.some((itemTag) => itemTag.toLowerCase().includes(tag))) {
+        return false;
+      }
+      return true;
+    });
+  }, [problemFilters, problems]);
   const selectedResult = runSummary?.results[selectedResultIndex] ?? null;
   const currentAttemptSummary = attemptSummary ?? createEmptyAttemptSummary(problem?.meta.id ?? "");
   const formParameterNames = parseParametersFromText(problemForm.parametersText);
@@ -606,10 +661,65 @@ function App() {
         <aside className="problem-list">
           <div className="panel-header">
             <span>Problems</span>
-            <strong>{problems.length}</strong>
+            <strong>{filteredProblems.length}/{problems.length}</strong>
+          </div>
+          <div className="problem-filters">
+            <input
+              value={problemFilters.search}
+              placeholder="Search title or ID"
+              onChange={(event) => updateProblemFilter("search", event.target.value)}
+            />
+            <div className="filter-grid">
+              <select
+                value={problemFilters.source}
+                onChange={(event) => updateProblemFilter("source", event.target.value as ProblemFilters["source"])}
+              >
+                <option value="all">All sources</option>
+                <option value="leetcode">LeetCode</option>
+                <option value="hackerrank">HackerRank</option>
+                <option value="codesignal">CodeSignal</option>
+                <option value="company">Company</option>
+                <option value="school">School</option>
+                <option value="custom">Custom</option>
+              </select>
+              <select
+                value={problemFilters.difficulty}
+                onChange={(event) => updateProblemFilter("difficulty", event.target.value as ProblemFilters["difficulty"])}
+              >
+                <option value="all">All levels</option>
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+              <select
+                value={problemFilters.status}
+                onChange={(event) => updateProblemFilter("status", event.target.value as ProblemFilters["status"])}
+              >
+                <option value="all">All status</option>
+                <option value="new">New</option>
+                <option value="attempted">Attempted</option>
+                <option value="solved">Solved</option>
+                <option value="review">Review</option>
+              </select>
+              <button className="secondary-button compact-button" type="button" onClick={clearProblemFilters}>
+                Clear
+              </button>
+            </div>
+            <div className="filter-grid">
+              <input
+                value={problemFilters.topic}
+                placeholder="Topic"
+                onChange={(event) => updateProblemFilter("topic", event.target.value)}
+              />
+              <input
+                value={problemFilters.tag}
+                placeholder="Tag"
+                onChange={(event) => updateProblemFilter("tag", event.target.value)}
+              />
+            </div>
           </div>
           <div className="list-scroll">
-            {problems.map((item) => {
+            {filteredProblems.map((item) => {
               const status = effectiveStatus(item);
               return (
                 <button
@@ -628,6 +738,7 @@ function App() {
                 </button>
               );
             })}
+            {filteredProblems.length === 0 ? <div className="empty-state compact-empty-state">No problems match the current filters.</div> : null}
           </div>
         </aside>
 

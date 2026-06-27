@@ -144,6 +144,11 @@ button {
   border-right: 1px solid var(--border);
 }
 
+.problem-list {
+  display: grid;
+  grid-template-rows: 42px auto minmax(0, 1fr);
+}
+
 .editor-pane {
   border-right: 0;
 }
@@ -255,8 +260,53 @@ button {
 }
 
 .list-scroll {
+  height: auto;
   overflow: auto;
   padding: 8px;
+}
+
+.problem-filters {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.problem-filters input,
+.problem-filters select {
+  width: 100%;
+  height: 30px;
+  min-width: 0;
+  padding: 0 8px;
+  color: var(--text);
+  background: var(--surface-muted);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  outline: none;
+  font: inherit;
+  font-size: 12px;
+}
+
+.problem-filters input::placeholder {
+  color: var(--text-subtle);
+}
+
+.problem-filters input:focus,
+.problem-filters select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(76 141 255 / 0.16);
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.compact-empty-state {
+  padding: 12px;
+  font-size: 12px;
 }
 
 .problem-row {
