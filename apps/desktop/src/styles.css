@@ -421,12 +421,18 @@ button {
 
 .case-fields {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 8px;
 }
 
 .case-field {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+
+.case-field-wide {
+  grid-column: 1 / -1;
 }
 
 .case-field span {
@@ -445,6 +451,8 @@ button {
   font-family: Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .result-passed {
@@ -488,27 +496,6 @@ button {
 .result-time {
   color: var(--text-muted);
   text-align: right;
-}
-
-.result-stdout,
-.result-error {
-  grid-column: 1 / -1;
-  margin: 6px 0 0;
-  padding: 8px;
-  overflow: auto;
-  border-radius: 6px;
-  white-space: pre-wrap;
-}
-
-.result-stdout {
-  color: #d5e6ff;
-  background: var(--code-bg);
-  border: 1px solid var(--border);
-}
-
-.result-error {
-  color: #ffc8c8;
-  background: #3b1f25;
 }
 
 .submission-strip {

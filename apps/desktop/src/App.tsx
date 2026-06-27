@@ -525,10 +525,19 @@ function App() {
                     <span>Actual =</span>
                     <pre>{JSON.stringify(selectedResult.actual)}</pre>
                   </div>
+                  {selectedResult.stdout ? (
+                    <div className="case-field">
+                      <span>Stdout =</span>
+                      <pre>{selectedResult.stdout}</pre>
+                    </div>
+                  ) : null}
+                  {selectedResult.error ? (
+                    <div className="case-field case-field-wide">
+                      <span>Error =</span>
+                      <pre>{selectedResult.error}</pre>
+                    </div>
+                  ) : null}
                 </div>
-
-                {selectedResult.stdout ? <pre className="result-stdout">{selectedResult.stdout}</pre> : null}
-                {selectedResult.error ? <pre className="result-error">{selectedResult.error}</pre> : null}
               </div>
             ) : null}
           </div>
