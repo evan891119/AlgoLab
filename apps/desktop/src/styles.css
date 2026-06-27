@@ -47,7 +47,7 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-rows: 72px minmax(0, 1fr) 210px;
+  grid-template-rows: 72px minmax(0, 1fr) 6px var(--results-height, 210px);
   height: 100vh;
   overflow: hidden;
 }
@@ -130,7 +130,7 @@ button {
 
 .workspace {
   display: grid;
-  grid-template-columns: 260px minmax(360px, 0.9fr) minmax(460px, 1.1fr);
+  grid-template-columns: var(--problem-list-width, 260px) 6px var(--statement-width, 460px) 6px minmax(420px, 1fr);
   min-height: 0;
 }
 
@@ -146,6 +146,56 @@ button {
 
 .editor-pane {
   border-right: 0;
+}
+
+.resize-handle {
+  position: relative;
+  z-index: 2;
+  background: var(--surface-muted);
+  transition: background 120ms ease;
+}
+
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  background: var(--border-strong);
+  opacity: 0.8;
+}
+
+.resize-handle:hover {
+  background: var(--surface-hover);
+}
+
+.resize-handle:hover::after {
+  background: var(--accent);
+}
+
+.resize-handle-vertical {
+  cursor: col-resize;
+  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+
+.resize-handle-vertical::after {
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 36px;
+  transform: translate(-50%, -50%);
+}
+
+.resize-handle-horizontal {
+  cursor: row-resize;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.resize-handle-horizontal::after {
+  top: 50%;
+  left: 50%;
+  width: 48px;
+  height: 2px;
+  transform: translate(-50%, -50%);
 }
 
 .panel-header {
@@ -287,7 +337,6 @@ button {
 }
 
 .results-pane {
-  border-top: 1px solid var(--border);
   border-right: 0;
   overflow: hidden;
 }
@@ -301,7 +350,7 @@ button {
 .results-grid {
   display: grid;
   gap: 6px;
-  max-height: 132px;
+  max-height: calc(100% - 76px);
   overflow: auto;
   padding: 10px 14px;
 }
@@ -502,6 +551,12 @@ button {
 .testcase-row input::placeholder,
 .stacked-field textarea::placeholder {
   color: var(--text-subtle);
+}
+
+.form-grid input:disabled {
+  color: var(--text-subtle);
+  cursor: not-allowed;
+  opacity: 0.75;
 }
 
 .form-grid input:focus,

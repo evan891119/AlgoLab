@@ -1,11 +1,21 @@
 import Editor from "@monaco-editor/react";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import type { Difficulty, ProblemDetail, ProblemSummary, RunSummary, Submission } from "@algolab/core";
-import { createProblem, getDraft, getProblem, listProblems, listSubmissions, runProblemTests, saveDraft, type CreateProblemInput } from "./tauri";
+import { createProblem, getDraft, getProblem, listProblems, listSubmissions, runProblemTests, saveDraft, updateProblem, type CreateProblemInput } from "./tauri";
 
 type LoadState = "idle" | "loading" | "error";
+type ProblemFormMode = "create" | "edit";
 
 interface TestCaseForm {
   id: string;
@@ -21,7 +31,9 @@ const createEmptyTestCase = (index: number): TestCaseForm => ({
   expectedText: "null"
 });
 
-const initialProblemForm: Omit<CreateProblemInput, "tags" | "testsJson"> & { tagsText: string; testCases: TestCaseForm[] } = {
+type ProblemForm = Omit<CreateProblemInput, "tags" | "testsJson"> & { tagsText: string; testCases: TestCaseForm[] };
+
+const initialProblemForm: ProblemForm = {
   id: "",
   title: "",
   difficulty: "easy",
@@ -33,11 +45,31 @@ const initialProblemForm: Omit<CreateProblemInput, "tags" | "testsJson"> & { tag
   testCases: [createEmptyTestCase(1)]
 };
 
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const problemToForm = (detail: ProblemDetail): ProblemForm => ({
+  id: detail.meta.id,
+  title: detail.meta.title,
+  difficulty: detail.meta.difficulty,
+  tagsText: detail.meta.tags.join(", "),
+  functionName: detail.meta.functionName,
+  timeLimitMs: detail.meta.timeLimitMs,
+  statement: detail.statement,
+  starterCode: detail.starterCode,
+  testCases: detail.tests.cases.map((testCase, index) => ({
+    id: crypto.randomUUID(),
+    name: testCase.name || `example ${index + 1}`,
+    inputText: JSON.stringify(testCase.input),
+    expectedText: JSON.stringify(testCase.expected)
+  }))
+});
+
 function difficultyClass(difficulty: ProblemSummary["difficulty"]) {
   return `difficulty difficulty-${difficulty}`;
 }
 
 function App() {
+  const workspaceRef = useRef<HTMLElement | null>(null);
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
@@ -48,10 +80,16 @@ function App() {
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [status, setStatus] = useState("Ready");
   const [isAddOpen, setIsAddOpen] = useState(() => new URLSearchParams(window.location.search).has("addProblem"));
+  const [problemFormMode, setProblemFormMode] = useState<ProblemFormMode>("create");
   const [problemForm, setProblemForm] = useState(initialProblemForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isStatementExpanded, setIsStatementExpanded] = useState(false);
+  const [layout, setLayout] = useState({
+    problemListWidth: 260,
+    statementWidth: 460,
+    resultsHeight: 210
+  });
 
   const refreshProblems = useCallback(async (nextSelectedId?: string) => {
     const items = await listProblems();
@@ -180,7 +218,30 @@ function App() {
     );
   };
 
-  const submitNewProblem = async (event: FormEvent<HTMLFormElement>) => {
+  const openCreateProblem = () => {
+    setProblemFormMode("create");
+    setProblemForm({ ...initialProblemForm, testCases: [createEmptyTestCase(1)] });
+    setFormError(null);
+    setIsStatementExpanded(false);
+    setIsAddOpen(true);
+  };
+
+  const openEditProblem = () => {
+    if (!problem) return;
+    setProblemFormMode("edit");
+    setProblemForm(problemToForm(problem));
+    setFormError(null);
+    setIsStatementExpanded(false);
+    setIsAddOpen(true);
+  };
+
+  const closeProblemForm = () => {
+    setIsAddOpen(false);
+    setFormError(null);
+    setIsStatementExpanded(false);
+  };
+
+  const submitProblemForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError(null);
     setIsCreating(true);
@@ -200,11 +261,16 @@ function App() {
         starterCode: problemForm.starterCode,
         testsJson: buildTestsJson()
       };
-      const created = await createProblem(input);
-      await refreshProblems(created.meta.id);
+
+      const savedProblem = problemFormMode === "edit"
+        ? await updateProblem(input.id, input)
+        : await createProblem(input);
+      await refreshProblems(savedProblem.meta.id);
+      setProblem(savedProblem);
+      setRunSummary(null);
       setProblemForm({ ...initialProblemForm, testCases: [createEmptyTestCase(1)] });
       setIsAddOpen(false);
-      setStatus(`Created ${created.meta.title}`);
+      setStatus(`${problemFormMode === "edit" ? "Updated" : "Created"} ${savedProblem.meta.title}`);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -213,9 +279,86 @@ function App() {
   };
 
   const selectedProblem = problems.find((item) => item.id === selectedId);
+  const layoutStyle = {
+    "--problem-list-width": `${layout.problemListWidth}px`,
+    "--statement-width": `${layout.statementWidth}px`,
+    "--results-height": `${layout.resultsHeight}px`
+  } as CSSProperties;
+
+  const startColumnResize = useCallback((target: "problemList" | "statement", event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startLayout = layout;
+    const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+    const minEditorWidth = 420;
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+
+      setLayout((current) => {
+        if (target === "problemList") {
+          const maxProblemListWidth = Math.min(420, workspaceWidth - startLayout.statementWidth - minEditorWidth);
+          return {
+            ...current,
+            problemListWidth: clamp(startLayout.problemListWidth + deltaX, 200, maxProblemListWidth)
+          };
+        }
+
+        const maxStatementWidth = Math.min(720, workspaceWidth - startLayout.problemListWidth - minEditorWidth);
+        return {
+          ...current,
+          statementWidth: clamp(startLayout.statementWidth + deltaX, 320, maxStatementWidth)
+        };
+      });
+    };
+
+    const stopResize = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+  }, [layout]);
+
+  const startResultsResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = layout.resultsHeight;
+    const maxResultsHeight = Math.min(460, window.innerHeight - 240);
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      setLayout((current) => ({
+        ...current,
+        resultsHeight: clamp(startHeight - (moveEvent.clientY - startY), 150, maxResultsHeight)
+      }));
+    };
+
+    const stopResize = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+  }, [layout.resultsHeight]);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" style={layoutStyle}>
       <header className="topbar">
         <div>
           <h1>AlgoLab</h1>
@@ -223,7 +366,10 @@ function App() {
         </div>
         <div className="toolbar">
           <span className="status-text">{status}</span>
-          <button className="secondary-button" onClick={() => setIsAddOpen(true)}>
+          <button className="secondary-button" disabled={!problem} onClick={openEditProblem}>
+            Edit Problem
+          </button>
+          <button className="secondary-button" onClick={openCreateProblem}>
             Add Problem
           </button>
           <button className="secondary-button" disabled={!problem} onClick={saveCurrentDraft}>
@@ -235,7 +381,7 @@ function App() {
         </div>
       </header>
 
-      <main className="workspace">
+      <main className="workspace" ref={workspaceRef}>
         <aside className="problem-list">
           <div className="panel-header">
             <span>Problems</span>
@@ -255,6 +401,14 @@ function App() {
           </div>
         </aside>
 
+        <div
+          className="resize-handle resize-handle-vertical"
+          role="separator"
+          aria-label="Resize problem list"
+          aria-orientation="vertical"
+          onPointerDown={(event) => startColumnResize("problemList", event)}
+        />
+
         <section className="statement-pane">
           <div className="panel-header">
             <span>{selectedProblem?.title ?? "Problem"}</span>
@@ -262,6 +416,14 @@ function App() {
           </div>
           <article className="statement" dangerouslySetInnerHTML={{ __html: statementHtml }} />
         </section>
+
+        <div
+          className="resize-handle resize-handle-vertical"
+          role="separator"
+          aria-label="Resize statement and editor"
+          aria-orientation="vertical"
+          onPointerDown={(event) => startColumnResize("statement", event)}
+        />
 
         <section className="editor-pane">
           <div className="panel-header">
@@ -287,6 +449,14 @@ function App() {
           </div>
         </section>
       </main>
+
+      <div
+        className="resize-handle resize-handle-horizontal"
+        role="separator"
+        aria-label="Resize test results"
+        aria-orientation="horizontal"
+        onPointerDown={startResultsResize}
+      />
 
       <section className="results-pane">
         <div className="panel-header">
@@ -322,13 +492,13 @@ function App() {
 
       {isAddOpen ? (
         <div className="modal-backdrop" role="presentation">
-          <form className="problem-modal" onSubmit={submitNewProblem}>
+          <form className="problem-modal" onSubmit={submitProblemForm}>
             <div className="modal-header">
               <div>
-                <h2>Add Problem</h2>
-                <p>Create a local problem from pasted content.</p>
+                <h2>{problemFormMode === "edit" ? "Edit Problem" : "Add Problem"}</h2>
+                <p>{problemFormMode === "edit" ? "Update the local statement, starter code, and tests." : "Create a local problem from pasted content."}</p>
               </div>
-              <button className="icon-button" type="button" aria-label="Close" onClick={() => setIsAddOpen(false)}>
+              <button className="icon-button" type="button" aria-label="Close" onClick={closeProblemForm}>
                 x
               </button>
             </div>
@@ -340,6 +510,7 @@ function App() {
                   value={problemForm.id}
                   placeholder="valid-anagram"
                   onChange={(event) => updateProblemForm("id", event.target.value)}
+                  disabled={problemFormMode === "edit"}
                   required
                 />
               </label>
@@ -460,11 +631,11 @@ function App() {
             {formError ? <div className="form-error">{formError}</div> : null}
 
             <div className="modal-actions">
-              <button className="secondary-button" type="button" onClick={() => setIsAddOpen(false)}>
+              <button className="secondary-button" type="button" onClick={closeProblemForm}>
                 Cancel
               </button>
               <button className="primary-button" type="submit" disabled={isCreating}>
-                {isCreating ? "Creating..." : "Create"}
+                {isCreating ? "Saving..." : problemFormMode === "edit" ? "Save Changes" : "Create"}
               </button>
             </div>
           </form>

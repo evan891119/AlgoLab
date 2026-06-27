@@ -11,6 +11,7 @@ let mockDraft: SolutionDraft | null = null;
 let mockSubmissionId = 1;
 let mockSubmissions: Submission[] = [];
 let mockCreatedProblems: ProblemDetail[] = [];
+let mockUpdatedProblems = new Map<string, ProblemDetail>();
 
 export interface CreateProblemInput {
   id: string;
@@ -31,22 +32,35 @@ const sampleProblem: ProblemDetail = {
   tests: sampleTests as ProblemDetail["tests"]
 };
 
+const buildProblemFromInput = (input: CreateProblemInput): ProblemDetail => ({
+  meta: {
+    id: input.id,
+    title: input.title,
+    difficulty: input.difficulty,
+    tags: input.tags,
+    functionName: input.functionName,
+    timeLimitMs: input.timeLimitMs
+  },
+  statement: input.statement,
+  starterCode: input.starterCode,
+  tests: JSON.parse(input.testsJson) as ProblemDetail["tests"]
+});
+
+const getMockProblems = () => [
+  mockUpdatedProblems.get(sampleProblem.meta.id) ?? sampleProblem,
+  ...mockCreatedProblems.map((problem) => mockUpdatedProblems.get(problem.meta.id) ?? problem)
+];
+
 export function listProblems(): Promise<ProblemSummary[]> {
   if (!hasTauriRuntime()) {
-    return Promise.resolve([
-      {
-        id: sampleProblem.meta.id,
-        title: sampleProblem.meta.title,
-        difficulty: sampleProblem.meta.difficulty,
-        tags: sampleProblem.meta.tags
-      },
-      ...mockCreatedProblems.map((problem) => ({
+    return Promise.resolve(
+      getMockProblems().map((problem) => ({
         id: problem.meta.id,
         title: problem.meta.title,
         difficulty: problem.meta.difficulty,
         tags: problem.meta.tags
       }))
-    ]);
+    );
   }
 
   return invoke("list_problems");
@@ -54,7 +68,7 @@ export function listProblems(): Promise<ProblemSummary[]> {
 
 export function getProblem(problemId: string): Promise<ProblemDetail> {
   if (!hasTauriRuntime()) {
-    const problem = [sampleProblem, ...mockCreatedProblems].find((item) => item.meta.id === problemId);
+    const problem = getMockProblems().find((item) => item.meta.id === problemId);
     return problem ? Promise.resolve(problem) : Promise.reject(new Error(`Unknown mock problem: ${problemId}`));
   }
 
@@ -63,29 +77,33 @@ export function getProblem(problemId: string): Promise<ProblemDetail> {
 
 export function createProblem(input: CreateProblemInput): Promise<ProblemDetail> {
   if (!hasTauriRuntime()) {
-    if ([sampleProblem, ...mockCreatedProblems].some((problem) => problem.meta.id === input.id)) {
+    if (getMockProblems().some((problem) => problem.meta.id === input.id)) {
       return Promise.reject(new Error(`Problem '${input.id}' already exists.`));
     }
 
-    const parsedTests = JSON.parse(input.testsJson) as ProblemDetail["tests"];
-    const problem: ProblemDetail = {
-      meta: {
-        id: input.id,
-        title: input.title,
-        difficulty: input.difficulty,
-        tags: input.tags,
-        functionName: input.functionName,
-        timeLimitMs: input.timeLimitMs
-      },
-      statement: input.statement,
-      starterCode: input.starterCode,
-      tests: parsedTests
-    };
+    const problem = buildProblemFromInput(input);
     mockCreatedProblems = [...mockCreatedProblems, problem];
     return Promise.resolve(problem);
   }
 
   return invoke("create_problem", { request: input });
+}
+
+export function updateProblem(problemId: string, input: CreateProblemInput): Promise<ProblemDetail> {
+  if (!hasTauriRuntime()) {
+    if (input.id !== problemId) {
+      return Promise.reject(new Error("Problem id cannot be changed while editing."));
+    }
+    if (!getMockProblems().some((problem) => problem.meta.id === problemId)) {
+      return Promise.reject(new Error(`Unknown mock problem: ${problemId}`));
+    }
+
+    const problem = buildProblemFromInput(input);
+    mockUpdatedProblems = new Map(mockUpdatedProblems).set(problemId, problem);
+    return Promise.resolve(problem);
+  }
+
+  return invoke("update_problem", { problemId, request: input });
 }
 
 export function getDraft(problemId: string): Promise<SolutionDraft | null> {
@@ -111,8 +129,9 @@ export function saveDraft(problemId: string, code: string): Promise<SolutionDraf
 
 export function runProblemTests(problemId: string, code: string): Promise<RunSummary> {
   if (!hasTauriRuntime()) {
+    const problem = getMockProblems().find((item) => item.meta.id === problemId) ?? sampleProblem;
     const isSolved = code.includes("seen") && code.includes("target -");
-    const results = sampleProblem.tests.cases.map((testCase) => ({
+    const results = problem.tests.cases.map((testCase) => ({
       name: testCase.name,
       status: isSolved ? "passed" : "failed",
       input: testCase.input,

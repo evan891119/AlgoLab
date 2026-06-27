@@ -65,7 +65,7 @@ struct ProblemDetail {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CreateProblemRequest {
+struct ProblemWriteRequest {
     id: String,
     title: String,
     difficulty: Difficulty,
@@ -251,8 +251,7 @@ fn get_problem(problem_id: String) -> Result<ProblemDetail, String> {
     read_problem(&problem_id)
 }
 
-#[tauri::command]
-fn create_problem(request: CreateProblemRequest) -> Result<ProblemDetail, String> {
+fn validate_problem_write_request(request: &ProblemWriteRequest) -> Result<(ProblemMeta, ProblemTests), String> {
     validate_problem_id(&request.id)?;
 
     if request.title.trim().is_empty() {
@@ -274,22 +273,20 @@ fn create_problem(request: CreateProblemRequest) -> Result<ProblemDetail, String
         return Err("Tests JSON functionName must match the problem function name.".to_string());
     }
 
-    let problem_dir = problem_path(&request.id)?;
-    if problem_dir.exists() {
-        return Err(format!("Problem '{}' already exists.", request.id));
-    }
-
     let meta = ProblemMeta {
-        id: request.id,
-        title: request.title,
-        difficulty: request.difficulty,
-        tags: request.tags,
-        function_name: request.function_name,
+        id: request.id.clone(),
+        title: request.title.clone(),
+        difficulty: request.difficulty.clone(),
+        tags: request.tags.clone(),
+        function_name: request.function_name.clone(),
         time_limit_ms: request.time_limit_ms,
     };
 
+    Ok((meta, tests))
+}
+
+fn write_problem_files(problem_dir: &Path, meta: &ProblemMeta, tests: &ProblemTests, request: ProblemWriteRequest) -> Result<ProblemDetail, String> {
     fs::create_dir_all(problems_dir()?).map_err(|error| format!("Could not create problems directory: {error}"))?;
-    fs::create_dir(&problem_dir).map_err(|error| format!("Could not create problem directory: {error}"))?;
     fs::write(
         problem_dir.join("meta.json"),
         serde_json::to_string_pretty(&meta).map_err(|error| error.to_string())?,
@@ -306,6 +303,35 @@ fn create_problem(request: CreateProblemRequest) -> Result<ProblemDetail, String
     .map_err(|error| format!("Could not write tests.json: {error}"))?;
 
     read_problem(&meta.id)
+}
+
+#[tauri::command]
+fn create_problem(request: ProblemWriteRequest) -> Result<ProblemDetail, String> {
+    let (meta, tests) = validate_problem_write_request(&request)?;
+    let problem_dir = problem_path(&request.id)?;
+    if problem_dir.exists() {
+        return Err(format!("Problem '{}' already exists.", request.id));
+    }
+
+    fs::create_dir_all(problems_dir()?).map_err(|error| format!("Could not create problems directory: {error}"))?;
+    fs::create_dir(&problem_dir).map_err(|error| format!("Could not create problem directory: {error}"))?;
+    write_problem_files(&problem_dir, &meta, &tests, request)
+}
+
+#[tauri::command]
+fn update_problem(problem_id: String, request: ProblemWriteRequest) -> Result<ProblemDetail, String> {
+    validate_problem_id(&problem_id)?;
+    if request.id != problem_id {
+        return Err("Problem id cannot be changed while editing.".to_string());
+    }
+
+    let (meta, tests) = validate_problem_write_request(&request)?;
+    let problem_dir = problem_path(&problem_id)?;
+    if !problem_dir.exists() {
+        return Err(format!("Problem '{problem_id}' does not exist."));
+    }
+
+    write_problem_files(&problem_dir, &meta, &tests, request)
 }
 
 #[tauri::command]
@@ -569,6 +595,7 @@ pub fn run() {
             list_problems,
             get_problem,
             create_problem,
+            update_problem,
             get_draft,
             save_draft,
             run_tests,
