@@ -371,7 +371,7 @@ function App() {
         setToolchainStatus({
           language: problem.meta.language,
           runtimeName: problem.meta.language === "javascript" ? "Node.js" : "Python 3",
-          command: problem.meta.language === "javascript" ? "node --version" : "python3 --version",
+          command: problem.meta.language === "javascript" ? "node --version" : "python3 --version or py -3 --version or python --version",
           available: false,
           version: null,
           installHint: "Install the required runtime and try again.",

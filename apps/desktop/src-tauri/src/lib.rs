@@ -213,24 +213,54 @@ struct ToolchainStatus {
 struct ToolchainDefinition {
     language: &'static str,
     runtime_name: &'static str,
-    command: &'static str,
-    args: &'static [&'static str],
+    candidates: &'static [ToolchainCandidate],
     install_hint: &'static str,
 }
+
+struct ToolchainCandidate {
+    command: &'static str,
+    version_args: &'static [&'static str],
+    run_prefix_args: &'static [&'static str],
+}
+
+#[cfg(windows)]
+const PYTHON_TOOLCHAIN_CANDIDATES: &[ToolchainCandidate] = &[
+    ToolchainCandidate {
+        command: "py",
+        version_args: &["-3", "--version"],
+        run_prefix_args: &["-3"],
+    },
+    ToolchainCandidate {
+        command: "python",
+        version_args: &["--version"],
+        run_prefix_args: &[],
+    },
+];
+
+#[cfg(not(windows))]
+const PYTHON_TOOLCHAIN_CANDIDATES: &[ToolchainCandidate] = &[ToolchainCandidate {
+    command: "python3",
+    version_args: &["--version"],
+    run_prefix_args: &[],
+}];
+
+const JAVASCRIPT_TOOLCHAIN_CANDIDATES: &[ToolchainCandidate] = &[ToolchainCandidate {
+    command: "node",
+    version_args: &["--version"],
+    run_prefix_args: &[],
+}];
 
 const PYTHON_TOOLCHAIN: ToolchainDefinition = ToolchainDefinition {
     language: "python",
     runtime_name: "Python 3",
-    command: "python3",
-    args: &["--version"],
-    install_hint: "Install Python 3 from https://www.python.org/downloads/ or Homebrew.",
+    candidates: PYTHON_TOOLCHAIN_CANDIDATES,
+    install_hint: "Install Python 3 from https://www.python.org/downloads/, Homebrew, or the Windows Python launcher.",
 };
 
 const JAVASCRIPT_TOOLCHAIN: ToolchainDefinition = ToolchainDefinition {
     language: "javascript",
     runtime_name: "Node.js",
-    command: "node",
-    args: &["--version"],
+    candidates: JAVASCRIPT_TOOLCHAIN_CANDIDATES,
     install_hint: "Install Node.js from https://nodejs.org/ or Homebrew.",
 };
 
@@ -270,70 +300,111 @@ fn toolchain_definition(language: &str) -> Result<&'static ToolchainDefinition, 
     }
 }
 
-fn format_command(definition: &ToolchainDefinition) -> String {
-    std::iter::once(definition.command)
-        .chain(definition.args.iter().copied())
+fn format_candidate_command(candidate: &ToolchainCandidate) -> String {
+    std::iter::once(candidate.command)
+        .chain(candidate.version_args.iter().copied())
         .collect::<Vec<_>>()
         .join(" ")
 }
 
+fn format_toolchain_commands(definition: &ToolchainDefinition) -> String {
+    definition
+        .candidates
+        .iter()
+        .map(format_candidate_command)
+        .collect::<Vec<_>>()
+        .join(" or ")
+}
+
+fn command_output(candidate: &ToolchainCandidate) -> std::io::Result<std::process::Output> {
+    Command::new(candidate.command)
+        .args(candidate.version_args)
+        .output()
+}
+
 fn check_toolchain(language: &str) -> Result<ToolchainStatus, String> {
     let definition = toolchain_definition(language)?;
-    let output = Command::new(definition.command)
-        .args(definition.args)
-        .output();
+    let mut errors = Vec::new();
 
-    Ok(match output {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let version = if stdout.is_empty() { stderr } else { stdout };
-            ToolchainStatus {
-                language: definition.language.to_string(),
-                runtime_name: definition.runtime_name.to_string(),
-                command: format_command(definition),
-                available: true,
-                version: if version.is_empty() {
-                    None
-                } else {
-                    Some(version)
-                },
-                install_hint: definition.install_hint.to_string(),
-                error: None,
+    for candidate in definition.candidates {
+        let output = command_output(candidate);
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                let version = if stdout.is_empty() { stderr } else { stdout };
+                return Ok(ToolchainStatus {
+                    language: definition.language.to_string(),
+                    runtime_name: definition.runtime_name.to_string(),
+                    command: format_candidate_command(candidate),
+                    available: true,
+                    version: if version.is_empty() {
+                        None
+                    } else {
+                        Some(version)
+                    },
+                    install_hint: definition.install_hint.to_string(),
+                    error: None,
+                });
             }
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            ToolchainStatus {
-                language: definition.language.to_string(),
-                runtime_name: definition.runtime_name.to_string(),
-                command: format_command(definition),
-                available: false,
-                version: None,
-                install_hint: definition.install_hint.to_string(),
-                error: Some(if stderr.is_empty() {
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                errors.push(if stderr.is_empty() {
                     format!(
                         "{} is installed but did not run successfully.",
-                        definition.runtime_name
+                        format_candidate_command(candidate)
                     )
                 } else {
-                    stderr
-                }),
+                    format!("{}: {stderr}", format_candidate_command(candidate))
+                });
             }
+            Err(error) => errors.push(format!("{}: {error}", format_candidate_command(candidate))),
         }
-        Err(error) => ToolchainStatus {
-            language: definition.language.to_string(),
-            runtime_name: definition.runtime_name.to_string(),
-            command: format_command(definition),
-            available: false,
-            version: None,
-            install_hint: definition.install_hint.to_string(),
-            error: Some(format!(
-                "{} is not available. {} problems require {}. {error}",
-                definition.runtime_name, definition.language, definition.runtime_name
-            )),
-        },
+    }
+
+    Ok(ToolchainStatus {
+        language: definition.language.to_string(),
+        runtime_name: definition.runtime_name.to_string(),
+        command: format_toolchain_commands(definition),
+        available: false,
+        version: None,
+        install_hint: definition.install_hint.to_string(),
+        error: Some(format!(
+            "{} is not available. {} problems require {}. Checked: {}",
+            definition.runtime_name,
+            definition.language,
+            definition.runtime_name,
+            errors.join("; ")
+        )),
     })
+}
+
+fn resolve_toolchain_candidate(language: &str) -> Result<&'static ToolchainCandidate, String> {
+    let definition = toolchain_definition(language)?;
+
+    for candidate in definition.candidates {
+        if command_output(candidate)
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+        {
+            return Ok(candidate);
+        }
+    }
+
+    let status = check_toolchain(language)?;
+    Err(format!(
+        "{} is not available for {} problems. Required command: `{}`. {}{}",
+        status.runtime_name,
+        status.language,
+        status.command,
+        status.install_hint,
+        status
+            .error
+            .as_ref()
+            .map(|error| format!(" Details: {error}"))
+            .unwrap_or_default()
+    ))
 }
 
 fn require_toolchain(language: &str) -> Result<ToolchainStatus, String> {
@@ -938,13 +1009,15 @@ fn execute_python(
     fs::write(&runner_path, build_python_runner(tests)?)
         .map_err(|error| format!("Could not write runner: {error}"))?;
 
-    let mut child = Command::new("python3")
+    let python = resolve_toolchain_candidate("python")?;
+    let mut child = Command::new(python.command)
+        .args(python.run_prefix_args)
         .arg(&runner_path)
         .current_dir(dir.path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("Could not start python3: {error}"))?;
+        .map_err(|error| format!("Could not start {}: {error}", python.command))?;
 
     let timeout = std::time::Duration::from_millis(timeout_ms);
     match child

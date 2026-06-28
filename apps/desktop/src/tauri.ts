@@ -257,7 +257,7 @@ export function getProblemAttemptSummary(problemId: string): Promise<ProblemAtte
 export function getToolchainStatus(language: ProblemLanguage): Promise<ToolchainStatus> {
   if (!hasTauriRuntime()) {
     const runtimeName = language === "javascript" ? "Node.js" : "Python 3";
-    const command = language === "javascript" ? "node --version" : "python3 --version";
+    const command = language === "javascript" ? "node --version" : "python3 --version or py -3 --version or python --version";
     return Promise.resolve({
       language,
       runtimeName,
@@ -266,7 +266,7 @@ export function getToolchainStatus(language: ProblemLanguage): Promise<Toolchain
       version: language === "javascript" ? "Mock Node.js runtime" : "Mock Python 3 runtime",
       installHint: language === "javascript"
         ? "Install Node.js from https://nodejs.org/ or Homebrew."
-        : "Install Python 3 from https://www.python.org/downloads/ or Homebrew.",
+        : "Install Python 3 from https://www.python.org/downloads/, Homebrew, or the Windows Python launcher.",
       error: null
     });
   }
