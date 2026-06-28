@@ -529,14 +529,50 @@ button {
 
 .attempt-summary-bar {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  min-height: 40px;
   padding: 8px 12px;
   color: var(--text-muted);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   font-size: 11px;
+}
+
+.editor-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.editor-title > span:first-child {
+  flex: 0 0 auto;
+}
+
+.runtime-inline {
+  min-width: 0;
+  max-width: 360px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-ready {
+  color: var(--success);
+}
+
+.runtime-missing {
+  color: var(--danger);
+}
+
+.runtime-checking {
+  color: var(--text-muted);
+}
+
+.attempt-summary-bar {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-height: 40px;
 }
 
 .attempt-summary-bar span {

@@ -18,13 +18,15 @@ import {
   getProblem,
   getProblemAttemptSummary,
   getProblemNotes,
+  getToolchainStatus,
   listProblems,
   listSubmissions,
   runProblemTests,
   saveDraft,
   saveProblemNotes,
   updateProblem,
-  type CreateProblemInput
+  type CreateProblemInput,
+  type ToolchainStatus
 } from "./tauri";
 
 type LoadState = "idle" | "loading" | "error";
@@ -236,6 +238,19 @@ function formatShortDateTime(value: string | null) {
   return value ? new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "-";
 }
 
+function codeFilename(language: ProblemLanguage) {
+  return language === "javascript" ? "Solution.js" : "Solution.py";
+}
+
+function runtimeStatusText(toolchainStatus: ToolchainStatus | null, language: ProblemLanguage | undefined) {
+  if (!language) return "No runtime selected";
+  if (!toolchainStatus) return "Checking runtime...";
+  if (toolchainStatus.available) {
+    return `${toolchainStatus.runtimeName}: ${toolchainStatus.version ?? "available"}`;
+  }
+  return `${toolchainStatus.runtimeName} missing`;
+}
+
 function App() {
   const workspaceRef = useRef<HTMLElement | null>(null);
   const [problems, setProblems] = useState<ProblemSummary[]>([]);
@@ -250,6 +265,7 @@ function App() {
   const [runSummary, setRunSummary] = useState<RunSummary | null>(null);
   const [selectedResultIndex, setSelectedResultIndex] = useState(0);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [toolchainStatus, setToolchainStatus] = useState<ToolchainStatus | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [status, setStatus] = useState("Ready");
   const [isAddOpen, setIsAddOpen] = useState(() => new URLSearchParams(window.location.search).has("addProblem"));
@@ -337,6 +353,37 @@ function App() {
     };
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!problem) {
+      setToolchainStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    setToolchainStatus(null);
+    getToolchainStatus(problem.meta.language)
+      .then((status) => {
+        if (cancelled) return;
+        setToolchainStatus(status);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setToolchainStatus({
+          language: problem.meta.language,
+          runtimeName: problem.meta.language === "javascript" ? "Node.js" : "Python 3",
+          command: problem.meta.language === "javascript" ? "node --version" : "python3 --version",
+          available: false,
+          version: null,
+          installHint: "Install the required runtime and try again.",
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [problem]);
+
   const statementHtml = useMemo(() => {
     if (!problem) return "";
     return DOMPurify.sanitize(marked.parse(problem.statement) as string);
@@ -363,15 +410,23 @@ function App() {
 
   const runCurrentTests = useCallback(async () => {
     if (!problem) return;
-    setStatus("Running tests...");
-    await saveCurrentDraft();
-    const summary = await runProblemTests(problem.meta.id, code);
-    setRunSummary(summary);
-    setSubmissions(await listSubmissions(problem.meta.id));
-    setAttemptSummary(await getProblemAttemptSummary(problem.meta.id));
-    await refreshProblems(problem.meta.id);
-    setStatus(`${summary.passed} passed, ${summary.failed} failed in ${summary.durationMs} ms`);
-  }, [code, problem, refreshProblems, saveCurrentDraft]);
+    if (toolchainStatus && !toolchainStatus.available) {
+      setStatus(`${toolchainStatus.runtimeName} is required. ${toolchainStatus.installHint}`);
+      return;
+    }
+    try {
+      setStatus("Running tests...");
+      await saveCurrentDraft();
+      const summary = await runProblemTests(problem.meta.id, code);
+      setRunSummary(summary);
+      setSubmissions(await listSubmissions(problem.meta.id));
+      setAttemptSummary(await getProblemAttemptSummary(problem.meta.id));
+      await refreshProblems(problem.meta.id);
+      setStatus(`${summary.passed} passed, ${summary.failed} failed in ${summary.durationMs} ms`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }, [code, problem, refreshProblems, saveCurrentDraft, toolchainStatus]);
 
   const updateProblemNotes = <Key extends keyof Omit<ProblemNotes, "problemId" | "updatedAt">>(
     key: Key,
@@ -592,6 +647,8 @@ function App() {
   const selectedResult = runSummary?.results[selectedResultIndex] ?? null;
   const currentAttemptSummary = attemptSummary ?? createEmptyAttemptSummary(problem?.meta.id ?? "");
   const formParameterNames = parseParametersFromText(problemForm.parametersText);
+  const canRunTests = Boolean(problem && toolchainStatus?.available);
+  const currentLanguage = problem?.meta.language;
   const layoutStyle = {
     "--problem-list-width": `${layout.problemListWidth}px`,
     "--statement-width": `${layout.statementWidth}px`,
@@ -675,7 +732,7 @@ function App() {
       <header className="topbar">
         <div>
           <h1>AlgoLab</h1>
-          <p>Local algorithm practice for Python problems.</p>
+          <p>Local algorithm practice for coding exams.</p>
         </div>
         <div className="toolbar">
           <span className="status-text">{status}</span>
@@ -688,7 +745,7 @@ function App() {
           <button className="secondary-button" disabled={!problem} onClick={saveCurrentDraft}>
             Save
           </button>
-          <button className="primary-button" disabled={!problem} onClick={runCurrentTests}>
+          <button className="primary-button" disabled={!canRunTests} onClick={runCurrentTests}>
             Run
           </button>
         </div>
@@ -879,7 +936,12 @@ function App() {
 
         <section className="editor-pane">
           <div className="panel-header">
-            <span>Solution.py</span>
+            <div className="editor-title">
+              <span>{codeFilename(problem?.meta.language ?? "python")}</span>
+              <span className={toolchainStatus ? (toolchainStatus.available ? "runtime-inline runtime-ready" : "runtime-inline runtime-missing") : "runtime-inline runtime-checking"}>
+                {runtimeStatusText(toolchainStatus, currentLanguage)}
+              </span>
+            </div>
             <strong>{savedAt ? `Saved ${new Date(savedAt).toLocaleTimeString()}` : "Unsaved draft"}</strong>
           </div>
           <div className="attempt-summary-bar">

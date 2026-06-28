@@ -198,6 +198,42 @@ struct Submission {
     created_at: String,
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ToolchainStatus {
+    language: String,
+    runtime_name: String,
+    command: String,
+    available: bool,
+    version: Option<String>,
+    install_hint: String,
+    error: Option<String>,
+}
+
+struct ToolchainDefinition {
+    language: &'static str,
+    runtime_name: &'static str,
+    command: &'static str,
+    args: &'static [&'static str],
+    install_hint: &'static str,
+}
+
+const PYTHON_TOOLCHAIN: ToolchainDefinition = ToolchainDefinition {
+    language: "python",
+    runtime_name: "Python 3",
+    command: "python3",
+    args: &["--version"],
+    install_hint: "Install Python 3 from https://www.python.org/downloads/ or Homebrew.",
+};
+
+const JAVASCRIPT_TOOLCHAIN: ToolchainDefinition = ToolchainDefinition {
+    language: "javascript",
+    runtime_name: "Node.js",
+    command: "node",
+    args: &["--version"],
+    install_hint: "Install Node.js from https://nodejs.org/ or Homebrew.",
+};
+
 fn repo_root() -> Result<PathBuf, String> {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -224,6 +260,100 @@ fn starter_filename(language: &str) -> Result<&'static str, String> {
         "javascript" => Ok("starter.js"),
         _ => Err("Problem language is invalid.".to_string()),
     }
+}
+
+fn toolchain_definition(language: &str) -> Result<&'static ToolchainDefinition, String> {
+    match language {
+        "python" => Ok(&PYTHON_TOOLCHAIN),
+        "javascript" => Ok(&JAVASCRIPT_TOOLCHAIN),
+        _ => Err("Problem language is invalid.".to_string()),
+    }
+}
+
+fn format_command(definition: &ToolchainDefinition) -> String {
+    std::iter::once(definition.command)
+        .chain(definition.args.iter().copied())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn check_toolchain(language: &str) -> Result<ToolchainStatus, String> {
+    let definition = toolchain_definition(language)?;
+    let output = Command::new(definition.command)
+        .args(definition.args)
+        .output();
+
+    Ok(match output {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let version = if stdout.is_empty() { stderr } else { stdout };
+            ToolchainStatus {
+                language: definition.language.to_string(),
+                runtime_name: definition.runtime_name.to_string(),
+                command: format_command(definition),
+                available: true,
+                version: if version.is_empty() {
+                    None
+                } else {
+                    Some(version)
+                },
+                install_hint: definition.install_hint.to_string(),
+                error: None,
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            ToolchainStatus {
+                language: definition.language.to_string(),
+                runtime_name: definition.runtime_name.to_string(),
+                command: format_command(definition),
+                available: false,
+                version: None,
+                install_hint: definition.install_hint.to_string(),
+                error: Some(if stderr.is_empty() {
+                    format!(
+                        "{} is installed but did not run successfully.",
+                        definition.runtime_name
+                    )
+                } else {
+                    stderr
+                }),
+            }
+        }
+        Err(error) => ToolchainStatus {
+            language: definition.language.to_string(),
+            runtime_name: definition.runtime_name.to_string(),
+            command: format_command(definition),
+            available: false,
+            version: None,
+            install_hint: definition.install_hint.to_string(),
+            error: Some(format!(
+                "{} is not available. {} problems require {}. {error}",
+                definition.runtime_name, definition.language, definition.runtime_name
+            )),
+        },
+    })
+}
+
+fn require_toolchain(language: &str) -> Result<ToolchainStatus, String> {
+    let status = check_toolchain(language)?;
+    if status.available {
+        return Ok(status);
+    }
+
+    Err(format!(
+        "{} is not available for {} problems. Required command: `{}`. {}{}",
+        status.runtime_name,
+        status.language,
+        status.command,
+        status.install_hint,
+        status
+            .error
+            .as_ref()
+            .map(|error| format!(" Details: {error}"))
+            .unwrap_or_default()
+    ))
 }
 
 fn validate_problem_id(problem_id: &str) -> Result<(), String> {
@@ -1062,12 +1192,18 @@ fn execute_solution(
 }
 
 #[tauri::command]
+fn get_toolchain_status(language: String) -> Result<ToolchainStatus, String> {
+    check_toolchain(&language)
+}
+
+#[tauri::command]
 fn run_tests(
     app: tauri::AppHandle,
     problem_id: String,
     code: String,
 ) -> Result<RunSummary, String> {
     let problem = read_problem(&problem_id)?;
+    require_toolchain(&problem.meta.language)?;
     let started = Instant::now();
     let results = execute_solution(
         &problem.meta.language,
@@ -1133,6 +1269,7 @@ pub fn run() {
             get_problem_notes,
             save_problem_notes,
             get_problem_attempt_summary,
+            get_toolchain_status,
             run_tests,
             list_submissions
         ])

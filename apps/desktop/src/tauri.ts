@@ -46,6 +46,16 @@ export interface CreateProblemInput {
   testsJson: string;
 }
 
+export interface ToolchainStatus {
+  language: ProblemLanguage;
+  runtimeName: string;
+  command: string;
+  available: boolean;
+  version: string | null;
+  installHint: string;
+  error: string | null;
+}
+
 export type SaveProblemNotesInput = Omit<ProblemNotes, "problemId" | "updatedAt">;
 
 const emptyProblemNotes = (problemId: string): ProblemNotes => ({
@@ -242,6 +252,26 @@ export function getProblemAttemptSummary(problemId: string): Promise<ProblemAtte
   }
 
   return invoke("get_problem_attempt_summary", { problemId });
+}
+
+export function getToolchainStatus(language: ProblemLanguage): Promise<ToolchainStatus> {
+  if (!hasTauriRuntime()) {
+    const runtimeName = language === "javascript" ? "Node.js" : "Python 3";
+    const command = language === "javascript" ? "node --version" : "python3 --version";
+    return Promise.resolve({
+      language,
+      runtimeName,
+      command,
+      available: true,
+      version: language === "javascript" ? "Mock Node.js runtime" : "Mock Python 3 runtime",
+      installHint: language === "javascript"
+        ? "Install Node.js from https://nodejs.org/ or Homebrew."
+        : "Install Python 3 from https://www.python.org/downloads/ or Homebrew.",
+      error: null
+    });
+  }
+
+  return invoke("get_toolchain_status", { language });
 }
 
 export function runProblemTests(problemId: string, code: string): Promise<RunSummary> {
