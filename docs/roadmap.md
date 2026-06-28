@@ -20,7 +20,7 @@ The platform-specific differences should mostly live in metadata, collections, n
 - Local desktop app.
 - Tauri v2, React, Vite, TypeScript, Monaco Editor.
 - SQLite for drafts and submissions.
-- Python runner first.
+- Python, JavaScript, and C++ runners.
 - Local problem files under `examples/problems`.
 - No scraping and no unofficial coding-platform APIs.
 
@@ -140,9 +140,15 @@ Track practice progress:
 
 ### Multi-Language Runners
 
-Python remains first. Later candidates:
+Current local runners:
 
-- JavaScript or TypeScript.
+- Python.
+- JavaScript.
+- C++.
+
+Later candidates:
+
+- TypeScript.
 - Go.
 - Rust.
 - SQL.

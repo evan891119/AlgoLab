@@ -115,7 +115,7 @@ struct ProblemWriteRequest {
     tests_json: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 enum TestStatus {
     Passed,
@@ -250,6 +250,19 @@ const JAVASCRIPT_TOOLCHAIN_CANDIDATES: &[ToolchainCandidate] = &[ToolchainCandid
     run_prefix_args: &[],
 }];
 
+const CPP_TOOLCHAIN_CANDIDATES: &[ToolchainCandidate] = &[
+    ToolchainCandidate {
+        command: "clang++",
+        version_args: &["--version"],
+        run_prefix_args: &[],
+    },
+    ToolchainCandidate {
+        command: "g++",
+        version_args: &["--version"],
+        run_prefix_args: &[],
+    },
+];
+
 const PYTHON_TOOLCHAIN: ToolchainDefinition = ToolchainDefinition {
     language: "python",
     runtime_name: "Python 3",
@@ -262,6 +275,13 @@ const JAVASCRIPT_TOOLCHAIN: ToolchainDefinition = ToolchainDefinition {
     runtime_name: "Node.js",
     candidates: JAVASCRIPT_TOOLCHAIN_CANDIDATES,
     install_hint: "Install Node.js from https://nodejs.org/ or Homebrew.",
+};
+
+const CPP_TOOLCHAIN: ToolchainDefinition = ToolchainDefinition {
+    language: "cpp",
+    runtime_name: "C++ compiler",
+    candidates: CPP_TOOLCHAIN_CANDIDATES,
+    install_hint: "Install Xcode Command Line Tools, LLVM clang++, GCC g++, or a C++ compiler.",
 };
 
 fn repo_root() -> Result<PathBuf, String> {
@@ -288,6 +308,7 @@ fn starter_filename(language: &str) -> Result<&'static str, String> {
     match language {
         "python" => Ok("starter.py"),
         "javascript" => Ok("starter.js"),
+        "cpp" => Ok("starter.cpp"),
         _ => Err("Problem language is invalid.".to_string()),
     }
 }
@@ -296,6 +317,7 @@ fn toolchain_definition(language: &str) -> Result<&'static ToolchainDefinition, 
     match language {
         "python" => Ok(&PYTHON_TOOLCHAIN),
         "javascript" => Ok(&JAVASCRIPT_TOOLCHAIN),
+        "cpp" => Ok(&CPP_TOOLCHAIN),
         _ => Err("Problem language is invalid.".to_string()),
     }
 }
@@ -654,7 +676,7 @@ fn validate_problem_write_request(
     ) {
         return Err("Problem status is invalid.".to_string());
     }
-    if !matches!(request.language.as_str(), "python" | "javascript") {
+    if !matches!(request.language.as_str(), "python" | "javascript" | "cpp") {
         return Err("Problem language is invalid.".to_string());
     }
 
@@ -1251,6 +1273,348 @@ fn execute_javascript(
     }
 }
 
+fn cpp_string_literal(value: &str) -> Result<String, String> {
+    serde_json::to_string(value).map_err(|error| error.to_string())
+}
+
+fn json_to_cpp_literal(value: &Value) -> Result<String, String> {
+    match value {
+        Value::Null => Err("C++ test arguments cannot be null in the generic runner.".to_string()),
+        Value::Bool(value) => Ok(value.to_string()),
+        Value::Number(value) => Ok(value.to_string()),
+        Value::String(value) => Ok(format!("std::string({})", cpp_string_literal(value)?)),
+        Value::Array(values) => {
+            if values.is_empty() {
+                return Ok("std::vector<int>{}".to_string());
+            }
+
+            let items = values
+                .iter()
+                .map(json_to_cpp_literal)
+                .collect::<Result<Vec<_>, _>>()?
+                .join(", ");
+            Ok(format!("std::vector{{{items}}}"))
+        }
+        Value::Object(_) => {
+            Err("C++ object arguments are not supported by the generic runner yet.".to_string())
+        }
+    }
+}
+
+fn build_cpp_runner(tests: &ProblemTests) -> Result<String, String> {
+    let mut run_cases = Vec::new();
+
+    for case in &tests.cases {
+        let input_json = serde_json::to_string(&case.input).map_err(|error| error.to_string())?;
+        let expected_json =
+            serde_json::to_string(&case.expected).map_err(|error| error.to_string())?;
+        let arg_values = case
+            .input
+            .iter()
+            .map(json_to_cpp_literal)
+            .collect::<Result<Vec<_>, _>>()?;
+        let arg_declarations = arg_values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| format!("      auto arg{index} = {value};"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let args = (0..arg_values.len())
+            .map(|index| format!("arg{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        run_cases.push(format!(
+            r#"
+  results.push_back(run_case(
+    {name:?},
+    {input:?},
+    {expected:?},
+    [&]() {{
+{arg_declarations}
+      return solution.{function_name}({args});
+    }}
+  ));
+"#,
+            name = case.name,
+            input = input_json,
+            expected = expected_json,
+            arg_declarations = arg_declarations,
+            function_name = tests.function_name,
+            args = args
+        ));
+    }
+
+    Ok(format!(
+        r#"
+#include <algorithm>
+#include <chrono>
+#include <exception>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <vector>
+using namespace std;
+
+#include "solution.cpp"
+
+string escape_json(const string& value) {{
+  string escaped;
+  for (char character : value) {{
+    switch (character) {{
+      case '\\': escaped += "\\\\"; break;
+      case '"': escaped += "\\\""; break;
+      case '\n': escaped += "\\n"; break;
+      case '\r': escaped += "\\r"; break;
+      case '\t': escaped += "\\t"; break;
+      default: escaped += character; break;
+    }}
+  }}
+  return escaped;
+}}
+
+string json_string(const string& value) {{
+  return "\"" + escape_json(value) + "\"";
+}}
+
+string json_nullable_string(const string& value) {{
+  return value.empty() ? "null" : json_string(value);
+}}
+
+string to_json(const string& value) {{ return json_string(value); }}
+string to_json(const char* value) {{ return json_string(string(value)); }}
+string to_json(bool value) {{ return value ? "true" : "false"; }}
+string to_json(int value) {{ return to_string(value); }}
+string to_json(long value) {{ return to_string(value); }}
+string to_json(long long value) {{ return to_string(value); }}
+string to_json(unsigned int value) {{ return to_string(value); }}
+string to_json(unsigned long value) {{ return to_string(value); }}
+string to_json(unsigned long long value) {{ return to_string(value); }}
+
+string to_json(double value) {{
+  ostringstream stream;
+  stream << setprecision(17) << value;
+  return stream.str();
+}}
+
+string to_json(float value) {{
+  ostringstream stream;
+  stream << setprecision(9) << value;
+  return stream.str();
+}}
+
+template <typename T>
+string to_json(const vector<T>& values) {{
+  string output = "[";
+  for (size_t index = 0; index < values.size(); ++index) {{
+    if (index > 0) output += ",";
+    output += to_json(values[index]);
+  }}
+  output += "]";
+  return output;
+}}
+
+template <typename Fn>
+string run_case(const string& name, const string& input_json, const string& expected_json, Fn fn) {{
+  auto started = chrono::steady_clock::now();
+  ostringstream stdout_buffer;
+  streambuf* previous_cout = cout.rdbuf(stdout_buffer.rdbuf());
+
+  try {{
+    auto actual = fn();
+    cout.rdbuf(previous_cout);
+    auto ended = chrono::steady_clock::now();
+    auto duration_ms = chrono::duration_cast<chrono::milliseconds>(ended - started).count();
+    string actual_json = to_json(actual);
+    string status = actual_json == expected_json ? "passed" : "failed";
+
+    return "{{\"name\":" + json_string(name) +
+      ",\"status\":" + json_string(status) +
+      ",\"input\":" + input_json +
+      ",\"expected\":" + expected_json +
+      ",\"actual\":" + actual_json +
+      ",\"error\":null" +
+      ",\"stdout\":" + json_nullable_string(stdout_buffer.str()) +
+      ",\"durationMs\":" + to_string(duration_ms) +
+      "}}";
+  }} catch (const exception& error) {{
+    cout.rdbuf(previous_cout);
+    auto ended = chrono::steady_clock::now();
+    auto duration_ms = chrono::duration_cast<chrono::milliseconds>(ended - started).count();
+    return "{{\"name\":" + json_string(name) +
+      ",\"status\":\"error\"" +
+      ",\"input\":" + input_json +
+      ",\"expected\":" + expected_json +
+      ",\"actual\":null" +
+      ",\"error\":" + json_string(error.what()) +
+      ",\"stdout\":" + json_nullable_string(stdout_buffer.str()) +
+      ",\"durationMs\":" + to_string(duration_ms) +
+      "}}";
+  }} catch (...) {{
+    cout.rdbuf(previous_cout);
+    auto ended = chrono::steady_clock::now();
+    auto duration_ms = chrono::duration_cast<chrono::milliseconds>(ended - started).count();
+    return "{{\"name\":" + json_string(name) +
+      ",\"status\":\"error\"" +
+      ",\"input\":" + input_json +
+      ",\"expected\":" + expected_json +
+      ",\"actual\":null" +
+      ",\"error\":\"Unknown C++ exception\"" +
+      ",\"stdout\":" + json_nullable_string(stdout_buffer.str()) +
+      ",\"durationMs\":" + to_string(duration_ms) +
+      "}}";
+  }}
+}}
+
+int main() {{
+  Solution solution;
+  vector<string> results;
+{run_cases}
+
+  cout << "[";
+  for (size_t index = 0; index < results.size(); ++index) {{
+    if (index > 0) cout << ",";
+    cout << results[index];
+  }}
+  cout << "]";
+  return 0;
+}}
+"#,
+        run_cases = run_cases.join("")
+    ))
+}
+
+#[cfg(windows)]
+fn cpp_binary_name() -> &'static str {
+    "runner.exe"
+}
+
+#[cfg(not(windows))]
+fn cpp_binary_name() -> &'static str {
+    "runner"
+}
+
+fn test_results_for_error(
+    tests: &ProblemTests,
+    status: TestStatus,
+    error: String,
+) -> Vec<TestResult> {
+    tests
+        .cases
+        .iter()
+        .map(|case| TestResult {
+            name: case.name.clone(),
+            status: status.clone(),
+            input: case.input.clone(),
+            expected: case.expected.clone(),
+            actual: None,
+            error: Some(error.clone()),
+            stdout: None,
+            duration_ms: 0,
+        })
+        .collect()
+}
+
+fn execute_cpp(
+    code: &str,
+    tests: &ProblemTests,
+    timeout_ms: u64,
+) -> Result<Vec<TestResult>, String> {
+    let dir = tempdir().map_err(|error| format!("Could not create temp directory: {error}"))?;
+    let solution_path = dir.path().join("solution.cpp");
+    let runner_path = dir.path().join("runner.cpp");
+    let binary_path = dir.path().join(cpp_binary_name());
+
+    fs::write(&solution_path, code)
+        .map_err(|error| format!("Could not write solution: {error}"))?;
+    fs::write(&runner_path, build_cpp_runner(tests)?)
+        .map_err(|error| format!("Could not write runner: {error}"))?;
+
+    let compiler = resolve_toolchain_candidate("cpp")?;
+    let mut compile_child = Command::new(compiler.command)
+        .args(compiler.run_prefix_args)
+        .arg("-std=c++17")
+        .arg(&runner_path)
+        .arg("-o")
+        .arg(&binary_path)
+        .current_dir(dir.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Could not start {}: {error}", compiler.command))?;
+
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+    match compile_child
+        .wait_timeout(timeout)
+        .map_err(|error| error.to_string())?
+    {
+        Some(_) => {
+            let output = compile_child
+                .wait_with_output()
+                .map_err(|error| error.to_string())?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                return Ok(test_results_for_error(tests, TestStatus::Error, stderr));
+            }
+        }
+        None => {
+            compile_child.kill().map_err(|error| error.to_string())?;
+            let _ = compile_child.wait();
+            return Ok(test_results_for_error(
+                tests,
+                TestStatus::Timeout,
+                format!("Compilation exceeded {timeout_ms} ms."),
+            ));
+        }
+    }
+
+    let mut run_child = Command::new(&binary_path)
+        .current_dir(dir.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Could not start compiled C++ runner: {error}"))?;
+
+    match run_child
+        .wait_timeout(timeout)
+        .map_err(|error| error.to_string())?
+    {
+        Some(_) => {
+            let output = run_child
+                .wait_with_output()
+                .map_err(|error| error.to_string())?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                return Ok(test_results_for_error(tests, TestStatus::Error, stderr));
+            }
+
+            let stdout = String::from_utf8(output.stdout).map_err(|error| error.to_string())?;
+            serde_json::from_str(stdout.trim())
+                .map_err(|error| format!("Could not parse runner output: {error}"))
+        }
+        None => {
+            run_child.kill().map_err(|error| error.to_string())?;
+            let _ = run_child.wait();
+            Ok(tests
+                .cases
+                .iter()
+                .map(|case| TestResult {
+                    name: case.name.clone(),
+                    status: TestStatus::Timeout,
+                    input: case.input.clone(),
+                    expected: case.expected.clone(),
+                    actual: None,
+                    error: Some(format!("Execution exceeded {timeout_ms} ms.")),
+                    stdout: None,
+                    duration_ms: timeout_ms as u128,
+                })
+                .collect())
+        }
+    }
+}
+
 fn execute_solution(
     language: &str,
     code: &str,
@@ -1260,6 +1624,7 @@ fn execute_solution(
     match language {
         "python" => execute_python(code, tests, timeout_ms),
         "javascript" => execute_javascript(code, tests, timeout_ms),
+        "cpp" => execute_cpp(code, tests, timeout_ms),
         _ => Err("Problem language is invalid.".to_string()),
     }
 }
@@ -1319,6 +1684,59 @@ fn record_submission(
         )
         .map_err(|error| format!("Could not record submission: {error}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn cpp_runner_executes_vector_reference_solution() {
+        if !check_toolchain("cpp")
+            .map(|status| status.available)
+            .unwrap_or(false)
+        {
+            eprintln!("Skipping C++ runner test because no C++ compiler is available.");
+            return;
+        }
+
+        let tests = ProblemTests {
+            version: 1,
+            function_name: "twoSum".to_string(),
+            cases: vec![TestCase {
+                name: "example 1".to_string(),
+                input: vec![json!([2, 7, 11, 15]), json!(9)],
+                expected: json!([0, 1]),
+            }],
+        };
+        let code = r#"
+#include <unordered_map>
+#include <vector>
+using namespace std;
+
+class Solution {
+public:
+    vector<int> twoSum(vector<int>& nums, int target) {
+        cout << "checked";
+        unordered_map<int, int> seen;
+        for (int index = 0; index < static_cast<int>(nums.size()); ++index) {
+            int needed = target - nums[index];
+            if (seen.count(needed)) {
+                return {seen[needed], index};
+            }
+            seen[nums[index]] = index;
+        }
+        return {};
+    }
+};
+"#;
+
+        let results = execute_cpp(code, &tests, 2000).expect("C++ runner should execute");
+        assert_eq!(results.len(), 1);
+        assert!(matches!(results[0].status, TestStatus::Passed));
+        assert_eq!(results[0].stdout.as_deref(), Some("checked"));
+    }
 }
 
 pub fn run() {

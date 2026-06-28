@@ -1,7 +1,7 @@
 export type Difficulty = "easy" | "medium" | "hard";
 export type ProblemSource = "leetcode" | "hackerrank" | "codesignal" | "company" | "school" | "custom";
 export type ProblemStatus = "new" | "attempted" | "solved" | "review";
-export type ProblemLanguage = "python" | "javascript";
+export type ProblemLanguage = "python" | "javascript" | "cpp";
 
 export interface ProblemMeta {
   id: string;
@@ -95,7 +95,7 @@ export function validateProblemMeta(value: unknown): ProblemMeta {
     throw new Error("Problem status is invalid.");
   }
   const language = meta.language ?? "python";
-  if (language !== "python" && language !== "javascript") {
+  if (language !== "python" && language !== "javascript" && language !== "cpp") {
     throw new Error("Problem language is invalid.");
   }
 

@@ -256,17 +256,27 @@ export function getProblemAttemptSummary(problemId: string): Promise<ProblemAtte
 
 export function getToolchainStatus(language: ProblemLanguage): Promise<ToolchainStatus> {
   if (!hasTauriRuntime()) {
-    const runtimeName = language === "javascript" ? "Node.js" : "Python 3";
-    const command = language === "javascript" ? "node --version" : "python3 --version or py -3 --version or python --version";
+    const runtimeName = language === "javascript" ? "Node.js" : language === "cpp" ? "C++ compiler" : "Python 3";
+    const command = language === "javascript"
+        ? "node --version"
+        : language === "cpp"
+          ? "clang++ --version or g++ --version"
+        : "python3 --version or py -3 --version or python --version";
     return Promise.resolve({
       language,
       runtimeName,
       command,
       available: true,
-      version: language === "javascript" ? "Mock Node.js runtime" : "Mock Python 3 runtime",
+      version: language === "javascript"
+        ? "Mock Node.js runtime"
+        : language === "cpp"
+          ? "Mock C++ compiler"
+          : "Mock Python 3 runtime",
       installHint: language === "javascript"
         ? "Install Node.js from https://nodejs.org/ or Homebrew."
-        : "Install Python 3 from https://www.python.org/downloads/, Homebrew, or the Windows Python launcher.",
+        : language === "cpp"
+          ? "Install Xcode Command Line Tools, LLVM clang++, GCC g++, or a C++ compiler."
+          : "Install Python 3 from https://www.python.org/downloads/, Homebrew, or the Windows Python launcher.",
       error: null
     });
   }

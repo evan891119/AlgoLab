@@ -17,6 +17,7 @@ The UI stack, SQLite storage, and Tauri shell are intended to be portable. Packa
 - Rust and Cargo.
 - Python 3 for Python problems.
 - Node.js runtime for JavaScript problems.
+- `clang++` or `g++` for C++ problems.
 
 ## Runtime Resolution
 
@@ -25,8 +26,21 @@ AlgoLab checks local runtimes before running code:
 - Python on macOS/Linux: `python3 --version`
 - Python on Windows: `py -3 --version`, then `python --version`
 - JavaScript on all platforms: `node --version`
+- C++ first version: `clang++ --version`, then `g++ --version`
 
 If the required runtime is missing, the Run action is blocked and the UI shows install guidance.
+
+## C++ Runner Notes
+
+The first C++ runner is intentionally simple:
+
+- Compiles with `clang++ -std=c++17` or `g++ -std=c++17`.
+- Expects a LeetCode-style `class Solution`.
+- Calls the configured function name from `tests.json`.
+- Supports common JSON-backed values: numbers, booleans, strings, and nested arrays as `std::vector`.
+- Captures `cout` output per test case.
+
+Custom structs, linked lists, trees, maps, and stdin-only competitive-programming problems need a future adapter layer.
 
 ## Windows Prerequisites
 
@@ -37,6 +51,7 @@ Install the normal Tauri v2 Windows development prerequisites:
 - Node.js 20 or newer.
 - WebView2 Runtime. Most supported Windows installations already include it, but it may need to be installed on older systems.
 - Python 3 if running Python problems.
+- A C++ compiler if running C++ problems.
 
 Recommended verification:
 
@@ -47,6 +62,8 @@ rustc --version
 cargo --version
 py -3 --version
 python --version
+clang++ --version
+g++ --version
 ```
 
 ## Linux Prerequisites
@@ -71,6 +88,7 @@ Also install:
 - Node.js 20 or newer.
 - Rust toolchain.
 - Python 3 if running Python problems.
+- A C++ compiler if running C++ problems.
 
 Recommended verification:
 
@@ -80,6 +98,8 @@ npm --version
 rustc --version
 cargo --version
 python3 --version
+clang++ --version
+g++ --version
 ```
 
 ## Storage And Paths
@@ -113,6 +133,7 @@ Manual checks:
 - Runtime status is visible in the editor header.
 - Python problems run when Python 3 is installed.
 - JavaScript problems run when Node.js is installed.
+- C++ problems compile and run when `clang++` or `g++` is installed.
 - Missing runtimes show a friendly message and block Run.
 - SQLite drafts, notes, and submissions persist after relaunch.
 

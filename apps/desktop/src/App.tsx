@@ -58,7 +58,8 @@ const createEmptyTestCase = (index: number, parameterCount = 0): TestCaseForm =>
 
 const starterTemplates: Record<ProblemLanguage, string> = {
   python: "class Solution:\n    def solve(self):\n        return None\n",
-  javascript: "class Solution {\n  solve() {\n    return null;\n  }\n}\n\nmodule.exports = Solution;\n"
+  javascript: "class Solution {\n  solve() {\n    return null;\n  }\n}\n\nmodule.exports = Solution;\n",
+  cpp: "#include <algorithm>\n#include <string>\n#include <unordered_map>\n#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    int solve() {\n        return 0;\n    }\n};\n"
 };
 
 type ProblemForm = Omit<CreateProblemInput, "tags" | "testsJson"> & {
@@ -148,14 +149,30 @@ const parseParametersFromJavaScript = (code: string, functionName: string) => {
     .filter(Boolean);
 };
 
+const parseParametersFromCpp = (code: string, functionName: string) => {
+  const signaturePattern = new RegExp(`\\b${functionName}\\s*\\(([^)]*)\\)`);
+  const match = code.match(signaturePattern);
+  if (!match) return [];
+
+  return match[1]
+    .split(",")
+    .map((parameter) => parameter.trim())
+    .filter(Boolean)
+    .map((parameter) => parameter.replace(/=.*/, "").trim().split(/\s+/).at(-1) ?? "")
+    .map((name) => name.replace(/[&*]/g, "").trim())
+    .filter(Boolean);
+};
+
 const parseParametersFromCode = (language: ProblemLanguage, code: string, functionName: string) => (
   language === "javascript"
     ? parseParametersFromJavaScript(code, functionName)
-    : parseParametersFromPython(code, functionName)
+    : language === "cpp"
+      ? parseParametersFromCpp(code, functionName)
+      : parseParametersFromPython(code, functionName)
 );
 
 const editorLanguageForProblem = (language: ProblemLanguage) => (
-  language === "javascript" ? "javascript" : "python"
+  language === "javascript" ? "javascript" : language === "cpp" ? "cpp" : "python"
 );
 
 const fallbackParameterNames = (count: number) => Array.from({ length: count }, (_, index) => `arg${index + 1}`);
@@ -239,7 +256,7 @@ function formatShortDateTime(value: string | null) {
 }
 
 function codeFilename(language: ProblemLanguage) {
-  return language === "javascript" ? "Solution.js" : "Solution.py";
+  return language === "javascript" ? "Solution.js" : language === "cpp" ? "Solution.cpp" : "Solution.py";
 }
 
 function runtimeStatusText(toolchainStatus: ToolchainStatus | null, language: ProblemLanguage | undefined) {
@@ -370,8 +387,12 @@ function App() {
         if (cancelled) return;
         setToolchainStatus({
           language: problem.meta.language,
-          runtimeName: problem.meta.language === "javascript" ? "Node.js" : "Python 3",
-          command: problem.meta.language === "javascript" ? "node --version" : "python3 --version or py -3 --version or python --version",
+          runtimeName: problem.meta.language === "javascript" ? "Node.js" : problem.meta.language === "cpp" ? "C++ compiler" : "Python 3",
+          command: problem.meta.language === "javascript"
+            ? "node --version"
+            : problem.meta.language === "cpp"
+              ? "clang++ --version or g++ --version"
+              : "python3 --version or py -3 --version or python --version",
           available: false,
           version: null,
           installHint: "Install the required runtime and try again.",
@@ -1113,6 +1134,7 @@ function App() {
                 >
                   <option value="python">Python</option>
                   <option value="javascript">JavaScript</option>
+                  <option value="cpp">C++</option>
                 </select>
               </label>
               <label>

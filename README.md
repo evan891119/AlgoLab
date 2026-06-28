@@ -10,7 +10,7 @@ Included in the MVP:
 
 - Load local problems from `examples/problems`.
 - Display a problem list and problem statement.
-- Edit Python and JavaScript solutions in Monaco Editor.
+- Edit Python, JavaScript, and C++ solutions in Monaco Editor.
 - Save drafts locally.
 - Run local solutions against `tests.json`.
 - Show passed and failed test results.
@@ -41,10 +41,11 @@ problem.md
 meta.json
 starter.py
 starter.js
+starter.cpp
 tests.json
 ```
 
-Only one starter file is required per problem. Python problems use `starter.py`; JavaScript problems use `starter.js`.
+Only one starter file is required per problem. Python problems use `starter.py`; JavaScript problems use `starter.js`; C++ problems use `starter.cpp`.
 
 ## Development
 
@@ -54,6 +55,7 @@ Prerequisites:
 - Rust toolchain with Cargo
 - Python 3 for Python problems
 - Node.js runtime for JavaScript problems
+- `clang++` or `g++` for C++ problems
 - Platform-specific Tauri dependencies; see [Cross-Platform Development](docs/cross-platform.md)
 
 Install dependencies:
