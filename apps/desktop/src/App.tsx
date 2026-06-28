@@ -163,6 +163,27 @@ const parseParametersFromCpp = (code: string, functionName: string) => {
     .filter(Boolean);
 };
 
+const inferFunctionNameFromCode = (language: ProblemLanguage, code: string) => {
+  if (language === "python") {
+    const matches = [...code.matchAll(/def\s+([A-Za-z_]\w*)\s*\(/g)]
+      .map((match) => match[1])
+      .filter((name) => name !== "__init__");
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  if (language === "javascript") {
+    const matches = [...code.matchAll(/^\s*([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{/gm)]
+      .map((match) => match[1])
+      .filter((name) => name !== "constructor");
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  const matches = [...code.matchAll(/(?:^|\n)\s*(?:[A-Za-z_][\w:<>,\s&*]*\s+)+([A-Za-z_]\w*)\s*\([^;{}]*\)\s*(?:const\s*)?\{/g)]
+    .map((match) => match[1])
+    .filter((name) => name !== "if" && name !== "for" && name !== "while" && name !== "switch");
+  return matches.length === 1 ? matches[0] : null;
+};
+
 const parseParametersFromCode = (language: ProblemLanguage, code: string, functionName: string) => (
   language === "javascript"
     ? parseParametersFromJavaScript(code, functionName)
@@ -504,13 +525,18 @@ function App() {
   };
 
   const inferParametersFromStarter = () => {
-    const parameterNames = parseParametersFromCode(problemForm.language, problemForm.starterCode, problemForm.functionName.trim());
+    const inferredFunctionName = inferFunctionNameFromCode(problemForm.language, problemForm.starterCode);
+    const functionName = inferredFunctionName ?? problemForm.functionName.trim();
+    const parameterNames = parseParametersFromCode(problemForm.language, problemForm.starterCode, functionName);
     if (parameterNames.length === 0) {
       setFormError("Could not infer parameters from starter code.");
       return;
     }
 
     setFormError(null);
+    if (inferredFunctionName && inferredFunctionName !== problemForm.functionName.trim()) {
+      updateProblemForm("functionName", inferredFunctionName);
+    }
     updateParametersText(parameterNames.join(", "));
   };
 
